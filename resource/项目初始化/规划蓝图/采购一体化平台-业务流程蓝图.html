@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>采购一体化平台 · 业务流程蓝图（SRM · STC · PTP）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A1930;
+    --bg-2:#0D2140;
+    --grid-line: rgba(150,190,230,0.07);
+    --grid-line-strong: rgba(150,190,230,0.14);
+    --ink:#EAF2FA;
+    --ink-dim:#9FB6D4;
+    --ink-faint:#6B84A6;
+    --card-bg:#F6F9FC;
+    --card-bg-hover:#FFFFFF;
+    --card-ink:#0F2540;
+    --card-ink-dim:#516A8C;
+    --line-cyan:#5EC8E0;
+    --c-srm:#3E8EDE;
+    --c-stc:#2FBFA0;
+    --c-exec:#E0A544;
+    --c-ptp:#8B7CE8;
+    --c-feedback:#E0A544;
+    --c-reject:#E85B5B;
+    --radius:4px;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--sans);}
+  body{
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+      linear-gradient(var(--grid-line-strong) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line-strong) 1px, transparent 1px);
+    background-size: 20px 20px, 20px 20px, 100px 100px, 100px 100px;
+    min-height:100vh;
+  }
+  a{color:inherit;}
+
+  /* ---------- header ---------- */
+  header{
+    padding:38px 5vw 18px;
+    border-bottom:1px solid var(--grid-line-strong);
+    position:relative;
+  }
+  .doc-tag{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:0.12em;
+    color:var(--line-cyan);
+    display:flex; align-items:center; gap:10px;
+  }
+  .doc-tag::before{content:'';width:8px;height:8px;border:1.5px solid var(--line-cyan);transform:rotate(45deg);flex:none;}
+  h1{
+    font-size:clamp(24px,3.2vw,38px);
+    font-weight:900;
+    margin:14px 0 8px;
+    letter-spacing:0.01em;
+  }
+  header p.desc{
+    max-width:760px;
+    color:var(--ink-dim);
+    font-size:14.5px;
+    line-height:1.75;
+    margin:0 0 20px;
+  }
+  .role-note{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    gap:14px;
+    max-width:1100px;
+    margin-top:6px;
+  }
+  .role-card{
+    border:1px solid var(--grid-line-strong);
+    border-left:3px solid var(--line-cyan);
+    background:rgba(255,255,255,0.02);
+    padding:12px 14px;
+    font-size:12.5px;
+    line-height:1.7;
+    color:var(--ink-dim);
+  }
+  .role-card b{color:var(--ink);font-weight:600;}
+
+  /* ---------- phase banner ---------- */
+  .phase-banner{
+    display:flex;
+    align-items:center;
+    gap:0;
+    padding:26px 5vw 6px;
+    flex-wrap:wrap;
+  }
+  .chip{
+    font-family:var(--mono);
+    font-size:13px;
+    font-weight:600;
+    padding:9px 20px 9px 24px;
+    color:#08131F;
+    position:relative;
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%);
+    margin-right:-14px;
+  }
+  .chip:first-child{clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%);}
+  .chip.srm{background:var(--c-srm);}
+  .chip.stc{background:var(--c-stc);}
+  .chip.exec{background:var(--c-exec);}
+  .chip.ptp{background:var(--c-ptp);}
+  .banner-note{
+    font-family:var(--mono);
+    font-size:11.5px;
+    color:var(--c-feedback);
+    margin-left:24px;
+    letter-spacing:0.02em;
+  }
+
+  /* ---------- flow canvas ---------- */
+  .flow-canvas{
+    position:relative;
+    padding:20px 5vw 40px;
+  }
+  .columns{
+    display:grid;
+    grid-template-columns:repeat(4, 1fr);
+    gap:34px;
+    position:relative;
+    z-index:2;
+  }
+  .column{
+    display:flex;
+    flex-direction:column;
+    gap:0;
+  }
+  .column-head{
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--ink-faint);
+    letter-spacing:0.08em;
+    margin-bottom:12px;
+    padding-bottom:8px;
+    border-bottom:1px dashed var(--grid-line-strong);
+  }
+  .column-head b{
+    display:block;
+    font-family:var(--sans);
+    font-size:15px;
+    color:var(--ink);
+    margin-top:3px;
+    font-weight:700;
+  }
+  .node{
+    background:var(--card-bg);
+    color:var(--card-ink);
+    border-radius:var(--radius);
+    padding:12px 14px 11px;
+    cursor:pointer;
+    position:relative;
+    border-left:4px solid transparent;
+    transition:transform .15s ease, box-shadow .15s ease, background .15s ease;
+    box-shadow:0 1px 0 rgba(0,0,0,0.2);
+  }
+  .node:hover{transform:translateY(-2px);background:var(--card-bg-hover);box-shadow:0 8px 18px rgba(0,0,0,0.35);}
+  .node .idx{
+    font-family:var(--mono);
+    font-size:10.5px;
+    color:var(--card-ink-dim);
+    display:block;
+    margin-bottom:3px;
+  }
+  .node .title{
+    font-size:14.5px;
+    font-weight:700;
+    line-height:1.35;
+  }
+  .node .summary{
+    font-size:12px;
+    color:var(--card-ink-dim);
+    line-height:1.55;
+    margin-top:5px;
+  }
+  .node .sys-row{margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;}
+  .sys-pill{
+    font-family:var(--mono);
+    font-size:9.5px;
+    font-weight:600;
+    padding:2px 6px;
+    border-radius:2px;
+    letter-spacing:0.03em;
+  }
+  .sys-pill.sap{background:#DCEAFB;color:#1F5AA6;}
+  .sys-pill.bts{background:#FDE7E1;color:#B4432A;}
+  .sys-pill.tms{background:#E4F5EA;color:#1F8A4C;}
+  .sys-pill.bms{background:#FBEBD8;color:#B36A16;}
+  .sys-pill.ecs{background:#EDE6FB;color:#6A4CB0;}
+
+  .node.srm{border-left-color:var(--c-srm);}
+  .node.stc{border-left-color:var(--c-stc);}
+  .node.exec{border-left-color:var(--c-exec);}
+  .node.ptp{border-left-color:var(--c-ptp);}
+
+  .connector{
+    height:26px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .connector svg{display:block;}
+
+  .link-svg{
+    position:absolute;
+    top:0; left:0;
+    pointer-events:none;
+    z-index:1;
+  }
+
+  /* ---------- systems dock ---------- */
+  .systems-dock{
+    padding:8px 5vw 10px;
+  }
+  .dock-label{
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--ink-faint);
+    letter-spacing:0.1em;
+    margin-bottom:12px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .dock-label::after{content:'';flex:1;height:1px;background:var(--grid-line-strong);}
+  .dock-row{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:14px;
+  }
+  .sys-box{
+    border:1px dashed rgba(150,190,230,0.35);
+    background:rgba(255,255,255,0.02);
+    padding:14px 16px;
+    cursor:pointer;
+    transition:background .15s ease, border-color .15s ease;
+  }
+  .sys-box:hover{background:rgba(255,255,255,0.06);border-color:var(--line-cyan);}
+  .sys-box .sys-code{
+    font-family:var(--mono);
+    font-weight:700;
+    font-size:16px;
+    color:var(--line-cyan);
+  }
+  .sys-box .sys-full{
+    font-size:11.5px;
+    color:var(--ink-dim);
+    margin-top:5px;
+    line-height:1.5;
+  }
+
+  /* ---------- support strip ---------- */
+  .support-strip{
+    padding:22px 5vw 50px;
+    display:flex;
+    gap:14px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .support-strip .dock-label{margin:0;flex:none;}
+  .support-chip{
+    font-size:12.5px;
+    padding:8px 14px;
+    border:1px solid var(--grid-line-strong);
+    border-radius:20px;
+    color:var(--ink-dim);
+    cursor:pointer;
+    background:rgba(255,255,255,0.02);
+  }
+  .support-chip:hover{color:var(--ink);border-color:var(--line-cyan);}
+
+  footer{
+    padding:20px 5vw 40px;
+    color:var(--ink-faint);
+    font-size:11.5px;
+    font-family:var(--mono);
+    border-top:1px solid var(--grid-line-strong);
+  }
+
+  /* ---------- modal ---------- */
+  .modal-backdrop{
+    position:fixed; inset:0;
+    background:rgba(6,14,26,0.72);
+    backdrop-filter:blur(3px);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .18s ease;
+    z-index:50;
+  }
+  .modal-backdrop.open{opacity:1;pointer-events:auto;}
+  .modal-card{
+    background:#F6F9FC;
+    color:var(--card-ink);
+    max-width:600px;
+    width:100%;
+    max-height:82vh;
+    overflow-y:auto;
+    border-radius:6px;
+    padding:28px 30px 26px;
+    transform:translateY(14px) scale(.98);
+    transition:transform .18s ease;
+    position:relative;
+    border-top:5px solid var(--line-cyan);
+  }
+  .modal-backdrop.open .modal-card{transform:translateY(0) scale(1);}
+  .modal-close{
+    position:absolute; top:16px; right:18px;
+    background:none;border:none;
+    font-size:20px;color:var(--card-ink-dim);
+    cursor:pointer; line-height:1;
+  }
+  .modal-close:hover{color:var(--card-ink);}
+  .modal-phase-tag{
+    font-family:var(--mono);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.06em;
+    padding:3px 9px;
+    border-radius:3px;
+    display:inline-block;
+    color:#fff;
+    margin-bottom:12px;
+  }
+  .modal-card h2{
+    font-size:21px;
+    margin:0 0 14px;
+    line-height:1.35;
+  }
+  .modal-section{margin-top:16px;}
+  .modal-section h4{
+    font-family:var(--mono);
+    font-size:11px;
+    text-transform:none;
+    letter-spacing:0.05em;
+    color:var(--card-ink-dim);
+    margin:0 0 6px;
+  }
+  .modal-section p{
+    font-size:13.5px;
+    line-height:1.75;
+    margin:0;
+    color:#1B3A5C;
+  }
+  .flow-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px;}
+  .flow-list li{
+    font-size:13px;
+    padding:6px 10px;
+    background:#EBF1F8;
+    border-radius:3px;
+    line-height:1.5;
+  }
+  .flow-list.up li::before{content:'← 来自　';color:#7A93B5;font-family:var(--mono);font-size:11px;}
+  .flow-list.down li::before{content:'→ 流向　';color:#7A93B5;font-family:var(--mono);font-size:11px;}
+  .modal-sys-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+
+  @media (max-width: 980px){
+    .columns{grid-template-columns:1fr;gap:18px;}
+    .dock-row{grid-template-columns:repeat(2,1fr);}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="doc-tag">PROCUREMENT PLATFORM BLUEPRINT · v1.0</div>
+  <h1>供应商协同采购一体化平台 · 业务流程蓝图</h1>
+  <p class="desc">
+    本图将手写业务架构草稿整理为完整的端到端采购流程，覆盖 <b style="color:#EAF2FA">SRM（供应商关系管理）→ STC（寻源到合同）→ 采购执行（PR-PO）→ PTP（采购到付款）</b>
+    四大阶段，并标注了与 <b style="color:#EAF2FA">SAP / BTS 税务系统 / TMS 资金系统 / BMS 预算系统 / ECS 费报系统</b> 的集成关系。
+    点击任意节点可查看该功能的业务解释与上下游关联；草稿中表述模糊的环节（如招投标标准动作、三单匹配、无PO请款等）已依据常规采购管理惯例补充完整。
+  </p>
+  <div class="role-note">
+    <div class="role-card"><b>企业端用户</b>：认证协同 / 寻源协同 / 采购协同 / 质量文档协同，覆盖采购、质量、法务、财务等内部角色的协同操作。</div>
+    <div class="role-card"><b>供应商端用户</b>：通过供应商门户完成注册登录、查看招投标与中标公告、系统公告、订单确认、发票开具等操作。</div>
+    <div class="role-card"><b>横向支撑能力</b>：权限管理、品类管理作为平台级公共能力，贯穿 SRM / STC / 执行 三层，见页面底部说明。</div>
+  </div>
+</header>
+
+<div class="phase-banner">
+  <span class="chip srm">01 · SRM 供应商管理</span>
+  <span class="chip stc">02 · STC 寻源到合同</span>
+  <span class="chip exec">03 · 采购执行 PR-PO</span>
+  <span class="chip ptp">04 · PTP 采购到付款</span>
+  <span class="banner-note">⟲ 虚线：验收数据回流形成绩效闭环</span>
+</div>
+
+<main class="flow-canvas" id="flowCanvas">
+  <div class="columns" id="columns"></div>
+  <svg class="link-svg" id="linkSvg"></svg>
+</main>
+
+<section class="systems-dock">
+  <div class="dock-label">外围系统集成层 · EXTERNAL SYSTEMS</div>
+  <div class="dock-row" id="systemsRow"></div>
+</section>
+
+<section class="support-strip">
+  <div class="dock-label" style="width:100%;">平台级横向能力 · CROSS-CUTTING CAPABILITIES</div>
+</section>
+<section class="support-strip" id="supportRow" style="padding-top:0;"></section>
+
+<footer>
+  说明：本图基于手写架构草稿（业务场景梳理 / 功能预设草稿）整理绘制，部分环节已参照常规供应商招投标与 S2P（Source-to-Pay）标准流程补充完善，具体命名与审批路径请在需求评审阶段与业务方确认。
+</footer>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal-card" id="modalCard"></div>
+</div>
+
+<script>
+/* ============================ 数据定义 ============================ */
+
+const PHASE_META = {
+  srm:  { name:'SRM 供应商关系管理', color:'#3E8EDE' },
+  stc:  { name:'STC 寻源到合同',     color:'#2FBFA0' },
+  exec: { name:'采购执行（PR-PO）',   color:'#E0A544' },
+  ptp:  { name:'PTP 采购到付款',      color:'#8B7CE8' }
+};
+
+const SYSTEMS = {
+  sap: { code:'SAP', full:'SAP ERP（财务与主数据系统）',
+    role:'承载供应商 / 物料主数据、总账与应付账款核算、库存记账，是采购全流程的财务与主数据底座。',
+    nodes:['srm-1','srm-2','srm-4','exec-3','ptp-1','ptp-3','ptp-5'] },
+  bts: { code:'BTS', full:'BTS 税务系统',
+    role:'负责发票查验、进项税额校验与税务合规判断，防止虚开发票、重复报销等税务风险。',
+    nodes:['ptp-3','ptp-4'] },
+  tms: { code:'TMS', full:'TMS 资金系统',
+    role:'承接付款排期与支付执行、银企直联、账户余额管理，是请款到实际付款的执行通道。',
+    nodes:['ptp-7'] },
+  bms: { code:'BMS', full:'BMS 预算管理系统',
+    role:'在采购申请阶段做预算占用校验，在付款阶段做预算核销，超预算自动拦截或转特批流程。',
+    nodes:['exec-0','ptp-7'] },
+  ecs: { code:'ECS', full:'ECS 费用报销系统',
+    role:'承接无PO场景下的零星费用报销申请，与请款申请复用审批链路与额度控制，形成统一支付出口。',
+    nodes:['ptp-7'] }
+};
+
+const SUPPORT = {
+  perm: { name:'权限管理', full:'权限管理（平台级横向能力）',
+    body:'基于角色 / 组织架构的功能权限与数据权限控制，覆盖企业端（采购、质量、法务、财务等角色）与供应商端全部功能模块。不属于流程中某一具体环节，而是贯穿寻源、执行、付款全过程的基础安全能力，建议在各功能点上按“操作权限 + 数据可见范围”两个维度设计。' },
+  cat: { name:'品类管理', full:'品类管理（平台级横向能力）',
+    body:'维护统一的物料 / 服务品类树，是供应商品类库、寻源立项策略、采购需求匹配、SR配额分配等环节共用的基础数据。品类维度也是供应商绩效分析、集中采购策略制定的重要切片依据。' }
+};
+
+/*
+  节点数据结构：
+  id, phase, title, summary, business, upstream[], downstream[], systems[]
+*/
+const PHASES = [
+  {
+    id:'srm', label:'01', nodes:[
+      { title:'供应商注册', summary:'供应商通过门户提交企业资质与基础信息，发起合作申请。',
+        business:'供应商在“供应商门户”自主注册，填写工商信息、资质证照、开户行、联系人等基础资料，并可勾选意向合作品类。系统对必填项及证照有效期做校验，生成待认证的供应商申请单。',
+        upstream:['采购方定向邀请（可选场景）'], downstream:['供应商认证'], systems:[] },
+      { title:'供应商认证', summary:'资质审核、体系认证、样品打样试用，评定合格 / 临时合格。',
+        business:'采购 / 质量 / 技术等部门联合审核注册资料，必要时安排现场审厂、体系认证（如ISO）核查及样品打样试用。审核结论分为“正式合格”“临时合格（限定品类或额度）”“不通过”三类，全过程证据留痕以备稽核。',
+        upstream:['供应商注册'], downstream:['供应商库'], systems:['sap'] },
+      { title:'供应商库', summary:'合格供应商主数据中心，承载资质状态与有效期管理。',
+        business:'汇总已认证供应商的主数据，标记“正式合格 / 临时合格”及其有效期，到期前自动触发复审提醒。是 STC 寻源阶段候选供应商的唯一数据来源，也是 PTP 阶段下单资格校验的依据。',
+        upstream:['供应商认证'], downstream:['供应商品类库','供应商日常管理','寻源立项管理（跨阶段）'], systems:['sap'] },
+      { title:'供应商品类库', summary:'按物料 / 服务品类对供应商分类打标，支撑精准寻源。',
+        business:'依据统一品类树为每家供应商标注可供品类、产能与区域覆盖范围，供寻源立项阶段快速圈定候选供应商，也是品类采购策略制定的基础数据。',
+        upstream:['供应商库'], downstream:['寻源立项管理（跨阶段）'], systems:[] },
+      { title:'供应商日常管理', summary:'基础信息变更、证照到期提醒、异动留痕。',
+        business:'处理供应商联系人、开户行、证照等信息变更申请并留痕；证照临期自动提醒复核；与冻结 / 解冻管理联动维护禁用名单。',
+        upstream:['供应商库'], downstream:['SAP 主数据同步'], systems:['sap'] },
+      { title:'供应商冻结 / 解冻管理', summary:'因绩效、合规问题限制交易资格，解冻需审批。',
+        business:'当供应商触发绩效红线、合规稽核问题或长期无交易时可发起冻结，冻结后不可被选入新的寻源项目或生成新订单；解冻需履行审批并说明整改依据。',
+        upstream:['供应商绩效管理','合规稽核（外部流程）'], downstream:['供应商选择 / 定标（资格校验，跨阶段）'], systems:[] },
+      { title:'供应商绩效管理', summary:'质量 / 成本 / 交付 / 服务多维评分，驱动分级与冻结。',
+        business:'按月或季度汇总采购验收质量数据、交付及时率、价格竞争力、服务响应等指标，计算综合得分并分级（A/B/C）。低分供应商触发预警乃至冻结，高分供应商在下一轮寻源与 SR 配额分配中获得优先权重。',
+        upstream:['采购验收（跨阶段回流）','对账中心'], downstream:['供应商冻结 / 解冻管理','供应商选择 / 定标（评分参考，跨阶段）','SR配额管理（跨阶段）'], systems:[] },
+    ]
+  },
+  {
+    id:'stc', label:'02', nodes:[
+      { title:'寻源立项管理', summary:'依据采购需求发起寻源项目，选定寻源方式。',
+        business:'采购员基于采购计划或汇总的采购需求发起寻源项目，明确采购标的、预算区间、时间计划，并结合品类特性选择寻源方式：公开招标、邀请招标、竞争性谈判 / 竞价，或单一来源采购（需特批）。',
+        upstream:['供应商库','供应商品类库','采购需求管理（PR）汇总，跨阶段'], downstream:['招投标管理','询议价管理'], systems:[] },
+      { title:'招投标管理', summary:'标准招标全流程：发标—资格预审—开标—评标—定标—公告。',
+        business:'补充标准流程动作：①发布招标公告 / 邀请函 ②资格预审（如需） ③标书发售与澄清答疑 ④密封投标 / 线上投标 ⑤开标（公开唱标或系统自动解密） ⑥评标（技术+商务综合评分法） ⑦定标建议与审批 ⑧中标公告发布与异议处理期。全过程留痕以满足合规稽核要求。',
+        upstream:['寻源立项管理'], downstream:['供应商选择 / 定标'], systems:[] },
+      { title:'询议价管理', summary:'线上RFQ询价、线下议价、多轮竞价，适用小额或标准品。',
+        business:'面向合格供应商库发起询价单（RFQ），支持多轮报价与线下补充议价（如集中采购谈价），系统自动生成比价表辅助决策，适用于金额较小或标准化程度较高的采购场景。',
+        upstream:['寻源立项管理'], downstream:['供应商选择 / 定标','价目表管理'], systems:[] },
+      { title:'供应商选择 / 定标', summary:'汇总招标或询价结果，多维评分完成定标签约。',
+        business:'综合技术评分、商务报价、供应商历史绩效及冻结状态校验，确定中标 / 入围供应商，生成“定标单”，触发合同拟定或框架协议签署。',
+        upstream:['招投标管理','询议价管理','供应商冻结 / 解冻管理（资格校验，跨阶段）','供应商绩效管理（评分参考，跨阶段）'], downstream:['合同管理','价目表管理','BPA管理'], systems:[] },
+      { title:'合同管理', summary:'合同起草、审批、盖章、履约跟踪与到期预警。',
+        business:'基于定标结果生成采购合同，走法务 / 财务联合审批与电子或纸质盖章流程；履约期内跟踪关键条款执行情况（交付、质保、付款条件），到期前预警续签或终止。',
+        upstream:['供应商选择 / 定标'], downstream:['采购订单（PO）（履约依据，跨阶段）'], systems:['sap'] },
+      { title:'价目表管理', summary:'维护物料 / 服务有效期价格，供采购申请自动取价。',
+        business:'沉淀寻源 / 议价结果为标准价目表，按物料、供应商、有效期维护价格版本，支持阶梯价与区域价差异，是 PR 阶段“取价”环节的首选数据源。',
+        upstream:['供应商选择 / 定标','询议价管理'], downstream:['取价（跨阶段）'], systems:[] },
+      { title:'BPA管理（框架协议）', summary:'维护额度、期限、适用范围的框架协议，简化重复下单。',
+        business:'针对高频、标准化采购场景签署框架协议（Blanket Purchase Agreement），约定总额度、单价、有效期与适用品类；额度内可直接生成订单，无需重复走寻源流程。',
+        upstream:['供应商选择 / 定标'], downstream:['取价（跨阶段）','SR配额管理'], systems:[] },
+      { title:'SR配额管理', summary:'多供应商同品类的份额分配策略（分单 / 轮询）。',
+        business:'对同一品类下的多家合格供应商，依据绩效评分、产能、框架协议额度设定采购份额分配比例，用于订单自动分单，兼顾供应链风险分散与优胜劣汰激励。',
+        upstream:['BPA管理','供应商绩效管理（跨阶段）'], downstream:['采购订单（PO）（分单依据，跨阶段）'], systems:[] },
+    ]
+  },
+  {
+    id:'exec', label:'03', nodes:[
+      { title:'采购需求管理（PR）', summary:'需求部门线上 / 移动端发起采购申请，含预算校验。',
+        business:'需求部门通过 PC 或“MP 移动采购申请”提交标准化采购申请（PR），填写物料 / 服务、数量、期望交期；系统联动预算管理系统（BMS）做预算占用校验，超预算则拦截或触发特批流程。',
+        upstream:['需求部门 / MP移动端','供应商品类库（品类匹配，跨阶段）'], downstream:['取价'], systems:['bms'] },
+      { title:'取价', summary:'自动匹配价目表 / BPA价格，无价则触发询价补录。',
+        business:'系统依据物料、供应商、数量自动匹配有效价目表或框架协议（BPA）价格；若无可用价格，转入 STC 询议价流程补充报价后回填。',
+        upstream:['采购需求管理（PR）','价目表管理（跨阶段）','BPA管理（跨阶段）'], downstream:['采购申请审批'], systems:[] },
+      { title:'采购申请审批（含退回）', summary:'分级审批采购申请，不合格退回需求部门修改。',
+        business:'按金额、品类、部门设置分级审批路径；审批人可退回采购申请要求补充说明或修改，退回后需求部门重新提交，全流程留痕可追溯。',
+        upstream:['取价'], downstream:['采购订单（PO）','采购需求管理（PR）（退回，回环）'], systems:[] },
+      { title:'采购订单（PO）/ 采购运营订单', summary:'审批通过后生成正式采购订单，推送供应商协同。',
+        business:'汇总审批通过的 PR 生成采购订单，依据合同 / 框架协议条款固化价格与交期，订单同步至 ERP 并推送至采购门户供供应商确认。',
+        upstream:['采购申请审批','合同管理（履约依据，跨阶段）','SR配额管理（分单依据，跨阶段）'], downstream:['采购门户PO / 协同采购订单'], systems:['sap'] },
+      { title:'采购门户PO / 协同采购订单', summary:'供应商在线确认订单、承诺或变更交期，协同发货。',
+        business:'供应商通过供应商门户查看订单、确认接单或提出交期变更申请，双方在线协同直至发货前状态，形成“协同采购订单”记录，作为后续收货验收的比对依据。',
+        upstream:['采购订单（PO）'], downstream:['采购收货（GR）（跨阶段）'], systems:[] },
+    ]
+  },
+  {
+    id:'ptp', label:'04', nodes:[
+      { title:'采购收货（GR）', summary:'按订单登记实物到货，形成收货记录。',
+        business:'仓库 / 收货人依据协同采购订单登记到货数量、批次，系统按订单行做数量与超收容差校验，生成收货单（GR），作为入库与验收的前置凭证。',
+        upstream:['采购门户PO / 协同采购订单（跨阶段）'], downstream:['采购入库（Stock）','采购验收'], systems:[] },
+      { title:'采购入库（Stock）', summary:'物料按批次入库，更新库存台账。',
+        business:'收货合格物料办理入库手续，更新库存数量与批次台账，与 ERP 库存模块联动做实时记账，支撑后续领用与库存分析。',
+        upstream:['采购收货（GR）'], downstream:['库存 / Stock台账'], systems:['sap'] },
+      { title:'采购验收', summary:'质量检验与不合格整改，形成验收结论。',
+        business:'质量 / 使用部门对到货物料或服务进行验收检验，不合格项发起“质量整改”闭环跟踪；验收结论作为对账放款依据，同时回流至供应商绩效管理，形成质量维度评分数据。',
+        upstream:['采购收货（GR）'], downstream:['对账中心','供应商绩效管理（质量数据回流，跨阶段）'], systems:[] },
+      { title:'对账中心', summary:'PO—收货—发票三单匹配，生成对账单。',
+        business:'系统自动执行订单、收货 / 验收、发票三单匹配（3-way match），存在差异（价格 / 数量 / 税额）时转人工核实；匹配通过生成对账单作为应付结算依据，同时对接税务系统核验发票真实性。',
+        upstream:['采购验收','发票签收 / 开票工作台'], downstream:['应付结算','供应商月结'], systems:['sap','bts'] },
+      { title:'发票签收 / 开票工作台', summary:'供应商线上开票，企业签收并校验票种税额。',
+        business:'供应商在门户开票工作台提交电子发票，企业方签收并联动税务系统做发票查验、进项税额校验，防止虚开、重复报销风险，签收结果回填对账中心。',
+        upstream:['对账中心（触发开票需求）'], downstream:['对账中心（回填发票信息）','应付结算'], systems:['bts'] },
+      { title:'应付结算', summary:'核销应付账款，生成付款计划。',
+        business:'依据对账结果核销应付账款，明确付款条件（账期 / 预付比例），生成待付款计划，同步 ERP 总账做应付挂账。',
+        upstream:['对账中心','发票签收 / 开票工作台','供应商月结'], downstream:['请款申请'], systems:['sap'] },
+      { title:'供应商月结', summary:'高频交易供应商按月汇总对账，批量结算。',
+        business:'对交易频次高、单据量大的供应商，采用月度汇总对账模式，减少逐单对账成本；月末批量生成汇总对账单进入应付结算环节。',
+        upstream:['对账中心（交易明细汇总）'], downstream:['应付结算'], systems:[] },
+      { title:'请款申请（含无PO请款）', summary:'发起付款申请，支持无PO费用类请款与额度控制。',
+        business:'应付结算通过后发起请款申请，推送资金系统排期支付；同时支持“无PO请款”场景（如零星费用），与费用报销系统对接复用审批与额度控制，请款额度受预算系统联动管控。',
+        upstream:['应付结算','ECS 费用报销（无PO请款来源）'], downstream:['TMS 资金系统（支付执行）'], systems:['tms','bms','ecs'] },
+    ]
+  }
+];
+
+// 跨阶段 / 关键回环连线（用于绘制总线式连接线）
+// type: main(主流程实线) / cross(常规跨阶段虚线) / feedback(绩效反馈) / reject(退回)
+const CROSS_LINKS = [
+  { from:'srm-2', to:'stc-0', type:'cross' },
+  { from:'srm-3', to:'stc-0', type:'cross' },
+  { from:'srm-5', to:'stc-3', type:'cross' },
+  { from:'srm-6', to:'stc-3', type:'cross' },
+  { from:'stc-4', to:'exec-3', type:'cross' },
+  { from:'stc-5', to:'exec-1', type:'cross' },
+  { from:'stc-6', to:'exec-1', type:'cross' },
+  { from:'stc-7', to:'exec-3', type:'cross' },
+  { from:'exec-4', to:'ptp-0', type:'main' },
+  { from:'ptp-2', to:'srm-6', type:'feedback' },
+  { from:'exec-2', to:'exec-0', type:'reject' },
+];
+
+/* ============================ 渲染节点 ============================ */
+
+const nodeDataMap = {}; // id -> full data (for modal)
+
+function buildColumns(){
+  const container = document.getElementById('columns');
+  PHASES.forEach(phase => {
+    const meta = PHASE_META[phase.id];
+    const col = document.createElement('section');
+    col.className = 'column';
+    col.dataset.phase = phase.id;
+
+    const head = document.createElement('div');
+    head.className = 'column-head';
+    head.innerHTML = phase.label + ' · PHASE<b>' + meta.name + '</b>';
+    col.appendChild(head);
+
+    phase.nodes.forEach((n, i) => {
+      const id = phase.id + '-' + i;
+      nodeDataMap[id] = Object.assign({ id, phase: phase.id }, n);
+
+      const nodeEl = document.createElement('div');
+      nodeEl.className = 'node ' + phase.id;
+      nodeEl.id = 'node-' + id;
+      nodeEl.dataset.id = id;
+
+      const sysHtml = (n.systems && n.systems.length)
+        ? '<div class="sys-row">' + n.systems.map(s => '<span class="sys-pill ' + s + '">' + SYSTEMS[s].code + '</span>').join('') + '</div>'
+        : '';
+
+      nodeEl.innerHTML =
+        '<span class="idx">' + (i+1).toString().padStart(2,'0') + '</span>' +
+        '<div class="title">' + n.title + '</div>' +
+        '<div class="summary">' + n.summary + '</div>' +
+        sysHtml;
+
+      nodeEl.addEventListener('click', () => openModal(id));
+      col.appendChild(nodeEl);
+
+      if (i < phase.nodes.length - 1){
+        const conn = document.createElement('div');
+        conn.className = 'connector';
+        conn.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18"><path d="M9 1 V13 M4 9 L9 15 L14 9" stroke="' + meta.color + '" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/></svg>';
+        col.appendChild(conn);
+      }
+    });
+
+    container.appendChild(col);
+  });
+}
+
+function buildSystemsDock(){
+  const row = document.getElementById('systemsRow');
+  Object.keys(SYSTEMS).forEach(key => {
+    const s = SYSTEMS[key];
+    const box = document.createElement('div');
+    box.className = 'sys-box';
+    box.innerHTML = '<div class="sys-code">' + s.code + '</div><div class="sys-full">' + s.full + '</div>';
+    box.addEventListener('click', () => openSystemModal(key));
+    row.appendChild(box);
+  });
+}
+
+function buildSupportRow(){
+  const row = document.getElementById('supportRow');
+  Object.keys(SUPPORT).forEach(key => {
+    const s = SUPPORT[key];
+    const chip = document.createElement('div');
+    chip.className = 'support-chip';
+    chip.textContent = s.name;
+    chip.addEventListener('click', () => openSupportModal(key));
+    row.appendChild(chip);
+  });
+}
+
+/* ============================ 连线绘制（总线路由） ============================ */
+
+const PHASE_ORDER = PHASES.map(p => p.id); // ['srm','stc','exec','ptp']
+
+function drawLinks(){
+  const canvas = document.getElementById('flowCanvas');
+  const svg = document.getElementById('linkSvg');
+  svg.innerHTML = '';
+  canvas.style.paddingBottom = '0px';
+  // force reflow so the next getBoundingClientRect reads the un-padded layout
+  // eslint-disable-next-line no-unused-expressions
+  canvas.offsetHeight;
+
+  const canvasRect = canvas.getBoundingClientRect();
+  const naturalHeight = canvasRect.height;
+
+  const colEls = Array.from(document.querySelectorAll('.column'));
+  const colRects = colEls.map(el => el.getBoundingClientRect());
+
+  const allNodes = document.querySelectorAll('.node');
+  let lowestBottom = 0;
+  allNodes.forEach(el => {
+    const r = el.getBoundingClientRect();
+    const bottom = r.bottom - canvasRect.top;
+    if (bottom > lowestBottom) lowestBottom = bottom;
+  });
+  const busBase = lowestBottom + 26;
+  const extraHeight = busBase + CROSS_LINKS.length * 13 + 30;
+
+  svg.setAttribute('width', canvasRect.width);
+  svg.setAttribute('height', extraHeight);
+  const neededPadding = extraHeight - naturalHeight + 20;
+  canvas.style.paddingBottom = (neededPadding > 40 ? neededPadding : 40) + 'px';
+
+  // corridor x-positions (gaps between / around columns), safe from any card
+  function corridorRight(i){
+    if (i < colRects.length - 1){
+      return (colRects[i].right + colRects[i+1].left) / 2 - canvasRect.left;
+    }
+    return colRects[i].right - canvasRect.left + 20;
+  }
+  function corridorLeft(i){
+    if (i > 0){
+      return (colRects[i-1].right + colRects[i].left) / 2 - canvasRect.left;
+    }
+    return colRects[i].left - canvasRect.left - 20;
+  }
+
+  // markers
+  const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+  const colors = { main:'#5EC8E0', cross:'#7A93B5', feedback:'#E0A544', reject:'#E85B5B' };
+  Object.keys(colors).forEach(type => {
+    const marker = document.createElementNS('http://www.w3.org/2000/svg','marker');
+    marker.setAttribute('id','arrow-'+type);
+    marker.setAttribute('viewBox','0 0 10 10');
+    marker.setAttribute('refX','8'); marker.setAttribute('refY','5');
+    marker.setAttribute('markerWidth','6'); marker.setAttribute('markerHeight','6');
+    marker.setAttribute('orient','auto-start-reverse');
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d','M0,0 L10,5 L0,10 z');
+    path.setAttribute('fill', colors[type]);
+    marker.appendChild(path);
+    defs.appendChild(marker);
+  });
+  svg.appendChild(defs);
+
+  CROSS_LINKS.forEach((link, i) => {
+    const srcEl = document.getElementById('node-' + link.from);
+    const dstEl = document.getElementById('node-' + link.to);
+    if (!srcEl || !dstEl) return;
+    const sRect = srcEl.getBoundingClientRect();
+    const dRect = dstEl.getBoundingClientRect();
+
+    const siPhase = link.from.split('-')[0];
+    const tiPhase = link.to.split('-')[0];
+    const si = PHASE_ORDER.indexOf(siPhase);
+    const ti = PHASE_ORDER.indexOf(tiPhase);
+
+    let dir = 'right';
+    if (ti < si) dir = 'left';
+    else if (ti === si) dir = 'right';
+
+    const sy = sRect.top + sRect.height/2 - canvasRect.top;
+    const ty = dRect.top + dRect.height/2 - canvasRect.top;
+
+    const sx0 = (dir === 'right' ? sRect.right : sRect.left) - canvasRect.left;
+    const tx0 = (dir === 'right' ? dRect.left : dRect.right) - canvasRect.left;
+
+    const exitCorridor  = dir === 'right' ? corridorRight(si) : corridorLeft(si);
+    const entryCorridor = dir === 'right' ? corridorLeft(ti)  : corridorRight(ti);
+
+    const busY = busBase + i * 13;
+
+    const d = [
+      'M', sx0, sy,
+      'L', exitCorridor, sy,
+      'L', exitCorridor, busY,
+      'L', entryCorridor, busY,
+      'L', entryCorridor, ty,
+      'L', tx0, ty
+    ].join(' ');
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', d);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', colors[link.type] || colors.cross);
+    path.setAttribute('stroke-width', link.type === 'main' ? 2 : 1.3);
+    if (link.type !== 'main') path.setAttribute('stroke-dasharray', link.type === 'feedback' ? '2 4' : '5 3');
+    path.setAttribute('opacity', link.type === 'main' ? 0.9 : 0.55);
+    path.setAttribute('marker-end', 'url(#arrow-' + link.type + ')');
+    svg.appendChild(path);
+  });
+}
+
+/* ============================ 弹窗逻辑 ============================ */
+
+const backdrop = document.getElementById('modalBackdrop');
+const modalCard = document.getElementById('modalCard');
+
+function openModal(id){
+  const d = nodeDataMap[id];
+  if (!d) return;
+  const meta = PHASE_META[d.phase];
+
+  const sysHtml = (d.systems && d.systems.length)
+    ? '<div class="modal-section"><h4>关联外围系统</h4><div class="modal-sys-row">' +
+      d.systems.map(s => '<span class="sys-pill ' + s + '">' + SYSTEMS[s].code + ' · ' + SYSTEMS[s].full + '</span>').join('') +
+      '</div></div>'
+    : '';
+
+  modalCard.style.borderTopColor = meta.color;
+  modalCard.innerHTML =
+    '<button class="modal-close" aria-label="关闭">&times;</button>' +
+    '<span class="modal-phase-tag" style="background:' + meta.color + '">' + meta.name + '</span>' +
+    '<h2>' + d.title + '</h2>' +
+    '<div class="modal-section"><h4>功能说明</h4><p>' + d.summary + '</p></div>' +
+    '<div class="modal-section"><h4>业务解释</h4><p>' + d.business + '</p></div>' +
+    '<div class="modal-section"><h4>上游环节</h4><ul class="flow-list up">' + d.upstream.map(u=>'<li>'+u+'</li>').join('') + '</ul></div>' +
+    '<div class="modal-section"><h4>下游环节</h4><ul class="flow-list down">' + d.downstream.map(u=>'<li>'+u+'</li>').join('') + '</ul></div>' +
+    sysHtml;
+
+  modalCard.querySelector('.modal-close').addEventListener('click', closeModal);
+  backdrop.classList.add('open');
+}
+
+function openSystemModal(key){
+  const s = SYSTEMS[key];
+  modalCard.style.borderTopColor = '#5EC8E0';
+  modalCard.innerHTML =
+    '<button class="modal-close" aria-label="关闭">&times;</button>' +
+    '<span class="modal-phase-tag" style="background:#5EC8E0;color:#08131F">外围系统</span>' +
+    '<h2>' + s.full + '</h2>' +
+    '<div class="modal-section"><h4>系统角色</h4><p>' + s.role + '</p></div>' +
+    '<div class="modal-section"><h4>关联业务环节</h4><ul class="flow-list down">' +
+      s.nodes.map(id => '<li>' + (nodeDataMap[id] ? nodeDataMap[id].title : id) + '</li>').join('') +
+    '</ul></div>';
+  modalCard.querySelector('.modal-close').addEventListener('click', closeModal);
+  backdrop.classList.add('open');
+}
+
+function openSupportModal(key){
+  const s = SUPPORT[key];
+  modalCard.style.borderTopColor = '#9FB6D4';
+  modalCard.innerHTML =
+    '<button class="modal-close" aria-label="关闭">&times;</button>' +
+    '<span class="modal-phase-tag" style="background:#9FB6D4;color:#08131F">平台能力</span>' +
+    '<h2>' + s.full + '</h2>' +
+    '<div class="modal-section"><h4>说明</h4><p>' + s.body + '</p></div>';
+  modalCard.querySelector('.modal-close').addEventListener('click', closeModal);
+  backdrop.classList.add('open');
+}
+
+function closeModal(){
+  backdrop.classList.remove('open');
+}
+
+backdrop.addEventListener('click', (e) => { if (e.target === backdrop) closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+/* ============================ 初始化 ============================ */
+
+buildColumns();
+buildSystemsDock();
+buildSupportRow();
+
+function refreshLinks(){ requestAnimationFrame(() => drawLinks()); }
+
+window.addEventListener('load', refreshLinks);
+window.addEventListener('resize', () => {
+  clearTimeout(window.__rzT);
+  window.__rzT = setTimeout(refreshLinks, 150);
+});
+setTimeout(refreshLinks, 60);
+setTimeout(refreshLinks, 400);
+</script>
+</body>
+</html>

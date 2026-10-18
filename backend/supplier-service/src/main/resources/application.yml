@@ -1,0 +1,58 @@
+server.port: 8082
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  application:
+    name: srm-service
+  datasource:
+    url: ${SRM_DB_URL:jdbc:postgresql://localhost:5433/procurement?currentSchema=srm_schema}
+    username: ${POSTGRES_USER:procurement}
+    password: ${POSTGRES_PASSWORD:change-me-postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    open-in-view: false
+  flyway:
+    schemas: srm_schema
+    default-schema: srm_schema
+    create-schemas: true
+    locations: classpath:db/srm/migration
+  data.redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6381}
+    password: ${REDIS_PASSWORD:change-me-redis}
+  cache.redis.time-to-live: 10m
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:procurement}
+    password: ${RABBITMQ_PASSWORD:change-me-rabbitmq}
+    virtual-host: ${RABBITMQ_VHOST:procurement}
+    publisher-confirm-type: correlated
+  sql:
+    init:
+      mode: never
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.example.procurement.supplier.dao.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+feign:
+  client:
+    config:
+      default:
+        url: http://localhost:8082
+
+spring.cloud.nacos.discovery.server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+spring.cloud.nacos.discovery.namespace: ${NACOS_NAMESPACE:public}
+spring.cloud.nacos.discovery.group: ${NACOS_GROUP:DEFAULT_GROUP}
+
+management.endpoints.web.exposure.include: health,info,prometheus

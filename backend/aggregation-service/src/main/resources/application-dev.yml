@@ -1,0 +1,57 @@
+spring:
+  datasource:
+    url: ${SRM_DB_URL:jdbc:postgresql://localhost:5433/procurement?currentSchema=srm_schema}
+    username: ${POSTGRES_USER:procurement}
+    password: ${POSTGRES_PASSWORD:change-me-postgres}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    schemas: srm_schema
+    default-schema: srm_schema
+    create-schemas: true
+    locations: classpath:db/srm/migration
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6381}
+      password: ${REDIS_PASSWORD:change-me-redis}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:procurement}
+    password: ${RABBITMQ_PASSWORD:change-me-rabbitmq}
+    virtual-host: ${RABBITMQ_VHOST:procurement}
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.example.procurement.supplier.dao.entity
+  configuration:
+    map-underscore-to-camel-case: true
+
+integration:
+  management:
+    enabled: true
+    admin-key: ${INTEGRATION_ADMIN_KEY:}
+  sync:
+    page-size: 500
+    write-batch-size: 200
+    max-attempts: 5
+    lease-seconds: 60
+  mock-sap:
+    enabled: true
+    api-key: ${MOCK_SAP_API_KEY:local-sap-demo}
+  sap:
+    base-url: ${SAP_MASTER_DATA_URL:}
+    api-key: ${SAP_MASTER_DATA_KEY:}
+xxl:
+  job:
+    enabled: ${XXL_JOB_ENABLED:true}
+    admin-addresses: ${XXL_JOB_ADMIN_ADDRESSES:http://localhost:9090/xxl-job-admin}
+    access-token: ${XXL_JOB_ACCESS_TOKEN:local-procurement-xxl-token}
+    executor:
+      app-name: ${XXL_JOB_EXECUTOR_APP_NAME:procurement-integration-executor}
+      address: ${XXL_JOB_EXECUTOR_ADDRESS:http://host.docker.internal:9999}
+      port: ${XXL_JOB_EXECUTOR_PORT:9999}

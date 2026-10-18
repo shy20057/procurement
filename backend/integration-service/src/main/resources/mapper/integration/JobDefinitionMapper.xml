@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.dao.mapper.JobDefinitionMapper">
+<select id="lockDefinition" resultType="com.example.procurement.integration.dao.entity.JobDefinitionDO">
+    select * from integration_schema.job_definition where job_code=#{jobCode} for update
+  </select>
+  <select id="selectDefinitions" resultType="com.example.procurement.integration.dto.resp.JobDefinitionRespDTO">
+    select d.*,c.baseline_complete,c.committed_cursor,c.last_success_at,c.version as checkpoint_version,
+      r.run_id as latest_run_id,r.status as latest_status
+    from integration_schema.job_definition d
+    join integration_schema.sync_checkpoint c using(job_code)
+    left join lateral (select run_id,status from integration_schema.job_run
+      where job_code=d.job_code order by created_at desc limit 1) r on true order by d.job_code
+  </select>
+  <update id="setEnabled">update integration_schema.job_definition set enabled=#{enabled} where job_code=#{jobCode}</update>
+  <insert id="insertManagementAudit">
+    insert into integration_schema.management_audit(id,job_code,operation,reason)
+    values (#{id},#{jobCode},'RESET_INCOMPLETE_BASELINE',#{reason})
+  </insert>
+</mapper>

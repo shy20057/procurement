@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.dao.mapper.ExchangeRateMapper">
+<select id="selectByKeys" resultType="com.example.procurement.integration.dao.entity.ExchangeRateDO">
+    select * from integration_schema.exchange_rate t where t.rate_type||'|'||t.from_currency||'|'||t.to_currency||'|'||t.effective_date::text in
+    <foreach collection="keys" item="key" open="(" close=")" separator=",">#{key}</foreach>
+  </select>
+  <insert id="batchUpsert">
+    insert into integration_schema.exchange_rate (rate_type,from_currency,to_currency,effective_date,raw_rate,from_factor,to_factor,quotation_method,normalized_rate,deleted,source_version,source_changed_at,payload_hash) values
+    <foreach collection="records" item="row" separator=",">
+      (#{row.rateType},#{row.fromCurrency},#{row.toCurrency},#{row.effectiveDate},#{row.rawRate},#{row.fromFactor},#{row.toFactor},#{row.quotationMethod},#{row.normalizedRate},#{row.deleted},#{row.sourceVersion},#{row.sourceChangedAt},#{row.payloadHash})
+    </foreach>
+    on conflict (rate_type,from_currency,to_currency,effective_date) do update set
+    raw_rate=excluded.raw_rate,from_factor=excluded.from_factor,to_factor=excluded.to_factor,quotation_method=excluded.quotation_method,normalized_rate=excluded.normalized_rate,deleted=excluded.deleted,source_version=excluded.source_version,source_changed_at=excluded.source_changed_at,payload_hash=excluded.payload_hash,
+      synced_at=clock_timestamp()
+    where integration_schema.exchange_rate.source_version
+    <choose><when test="repair">&lt;=</when><otherwise>&lt;</otherwise></choose>
+      excluded.source_version
+  </insert>
+  <select id="count" resultType="long">select count(*) from integration_schema.exchange_rate where (from_currency ilike #{search} or to_currency ilike #{search})</select>
+  <select id="selectPage" resultType="com.example.procurement.integration.dao.entity.ExchangeRateDO">
+    select * from integration_schema.exchange_rate where (from_currency ilike #{search} or to_currency ilike #{search}) order by id limit #{size} offset #{offset}
+  </select>
+  <select id="resolve" resultType="com.example.procurement.integration.dao.entity.ExchangeRateDO">
+    select * from integration_schema.exchange_rate where from_currency=#{fromCurrency}
+      and to_currency=#{toCurrency} and rate_type=#{rateType} and effective_date&lt;=#{businessDate}
+      and deleted=false order by effective_date desc limit 1
+  </select>
+</mapper>

@@ -1,0 +1,33 @@
+server:
+  port: ${MONOLITH_PORT:8090}
+spring:
+  application:
+    name: aggregation-service
+  profiles:
+    default: dev
+  main:
+    allow-bean-definition-overriding: false
+  web:
+    resources:
+      static-locations: ${WEB_DIST_PATH:classpath:/static/}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health.show-details: always
+xxl:
+  job:
+    enabled: ${XXL_JOB_ENABLED:false}
+    admin-addresses: ${XXL_JOB_ADMIN_ADDRESSES:http://localhost:9090/xxl-job-admin}
+    access-token: ${XXL_JOB_ACCESS_TOKEN:}
+    executor:
+      app-name: ${XXL_JOB_EXECUTOR_APP_NAME:procurement-integration-executor}
+      address: ${XXL_JOB_EXECUTOR_ADDRESS:}
+      ip: ${XXL_JOB_EXECUTOR_IP:}
+      port: ${XXL_JOB_EXECUTOR_PORT:9999}
+      log-path: ${XXL_JOB_LOG_PATH:./logs/xxl-job}
+      retention-days: ${XXL_JOB_LOG_RETENTION_DAYS:30}

@@ -1,0 +1,46 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "采购全流程 PTP",
+    "subtitle": "寻源 → 定标 → 采购执行 → 结算付款",
+    "quality_profile": "showcase",
+    "locale": "zh-CN"
+  },
+  "lanes": [
+    { "id": "sourcing", "label": "寻源定标" },
+    { "id": "procurement", "label": "采购执行" },
+    { "id": "settlement", "label": "结算付款" }
+  ],
+  "phases": [
+    { "id": "phase-0", "label": "立项", "fromCol": 0, "toCol": 0, "variant": "emphasis" },
+    { "id": "phase-1", "label": "询价", "fromCol": 1, "toCol": 1 },
+    { "id": "phase-2", "label": "报价", "fromCol": 2, "toCol": 2 },
+    { "id": "phase-3", "label": "定标", "fromCol": 3, "toCol": 3, "variant": "emphasis" },
+    { "id": "phase-4", "label": "执行", "fromCol": 4, "toCol": 4 },
+    { "id": "phase-5", "label": "付款", "fromCol": 5, "toCol": 5 }
+  ],
+  "mainPath": ["sourcing-project", "rfq", "quotation", "award", "bpa", "po", "receipt"],
+  "nodes": [
+    { "id": "sourcing-project", "lane": "sourcing", "col": 0, "type": "backend", "label": "寻源项目", "sublabel": "立项/审批", "tag": "DRAFT→IN_SOURCING" },
+    { "id": "rfq", "lane": "sourcing", "col": 1, "type": "backend", "label": "询价单 RFQ", "sublabel": "发布邀请", "tag": "DRAFT→PUBLISHED" },
+    { "id": "quotation", "lane": "sourcing", "col": 2, "type": "backend", "label": "报价单", "sublabel": "供应商报价", "tag": "SUBMITTED→AWARDED" },
+    { "id": "award", "lane": "sourcing", "col": 3, "type": "backend", "label": "定标单", "sublabel": "审批定标", "tag": "PENDING→APPROVED", "yOffset": 0 },
+    { "id": "bpa", "lane": "procurement", "col": 3, "type": "backend", "label": "框架协议 BPA", "sublabel": "签约/价目表", "tag": "DRAFT→ACTIVE" },
+    { "id": "po", "lane": "procurement", "col": 4, "type": "backend", "label": "采购订单 PO", "sublabel": "下达/审批", "tag": "DRAFT→APPROVED" },
+    { "id": "receipt", "lane": "procurement", "col": 5, "type": "backend", "label": "收货单 GR", "sublabel": "实物/服务验收", "tag": "PENDING→COMPLETED" },
+    { "id": "invoice", "lane": "settlement", "col": 4, "type": "backend", "label": "发票", "sublabel": "收到/匹配", "tag": "RECEIVED→MATCHED" },
+    { "id": "payment", "lane": "settlement", "col": 5, "type": "backend", "label": "付款申请", "sublabel": "审批/付款", "tag": "PENDING→PAID" }
+  ],
+  "edges": [
+    { "from": "sourcing-project", "to": "rfq", "label": "发布询价", "variant": "emphasis", "route": "auto" },
+    { "from": "rfq", "to": "quotation", "route": "auto" },
+    { "from": "quotation", "to": "award", "label": "定标审批", "variant": "emphasis", "route": "auto" },
+    { "from": "award", "to": "bpa", "label": "签约", "variant": "emphasis", "route": "auto" },
+    { "from": "bpa", "to": "po", "label": "下达PO", "variant": "emphasis", "route": "auto" },
+    { "from": "po", "to": "receipt", "label": "送货/验收", "variant": "emphasis", "route": "auto" },
+    { "from": "receipt", "to": "invoice", "label": "收到发票", "variant": "emphasis", "route": "auto" },
+    { "from": "invoice", "to": "payment", "label": "提交付款", "variant": "emphasis", "route": "auto" }
+  ],
+  "cards": []
+}

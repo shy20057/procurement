@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.dao.mapper.CostCenterMapper">
+<select id="selectByKeys" resultType="com.example.procurement.integration.dao.entity.CostCenterDO">
+    select * from integration_schema.cost_center t where t.controlling_area||'|'||t.cost_center_code in
+    <foreach collection="keys" item="key" open="(" close=")" separator=",">#{key}</foreach>
+  </select>
+  <insert id="batchUpsert">
+    insert into integration_schema.cost_center (controlling_area,cost_center_code,company_code,name,valid_from,valid_to,blocked,deleted,source_version,source_changed_at,payload_hash) values
+    <foreach collection="records" item="row" separator=",">
+      (#{row.controllingArea},#{row.costCenterCode},#{row.companyCode},#{row.name},#{row.validFrom},#{row.validTo},#{row.blocked},#{row.deleted},#{row.sourceVersion},#{row.sourceChangedAt},#{row.payloadHash})
+    </foreach>
+    on conflict (controlling_area,cost_center_code) do update set
+    company_code=excluded.company_code,name=excluded.name,valid_from=excluded.valid_from,valid_to=excluded.valid_to,blocked=excluded.blocked,deleted=excluded.deleted,source_version=excluded.source_version,source_changed_at=excluded.source_changed_at,payload_hash=excluded.payload_hash,
+      synced_at=clock_timestamp()
+    where integration_schema.cost_center.source_version
+    <choose><when test="repair">&lt;=</when><otherwise>&lt;</otherwise></choose>
+      excluded.source_version
+  </insert>
+  <select id="count" resultType="long">select count(*) from integration_schema.cost_center where (name ilike #{search} or cost_center_code ilike #{search})</select>
+  <select id="selectPage" resultType="com.example.procurement.integration.dao.entity.CostCenterDO">
+    select * from integration_schema.cost_center where (name ilike #{search} or cost_center_code ilike #{search}) order by id limit #{size} offset #{offset}
+  </select>
+</mapper>

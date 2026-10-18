@@ -1,0 +1,61 @@
+server.port: 8086
+spring:
+  application.name: integration-service
+  profiles.default: dev
+  datasource:
+    url: ${INTEGRATION_DB_URL:jdbc:postgresql://localhost:5433/procurement?currentSchema=integration_schema}
+    username: ${INTEGRATION_DB_USER:${POSTGRES_USER:procurement}}
+    password: ${INTEGRATION_DB_PASSWORD:${POSTGRES_PASSWORD:change-me-postgres}}
+  flyway:
+    schemas: integration_schema
+    default-schema: integration_schema
+    create-schemas: true
+    locations: classpath:db/integration/migration
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:procurement}
+    password: ${RABBITMQ_PASSWORD:change-me-rabbitmq}
+    virtual-host: ${RABBITMQ_VHOST:procurement}
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+management.endpoints.web.exposure.include: health,info,prometheus
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+    local-cache-scope: statement
+
+integration:
+  sync:
+    page-size: 500
+    write-batch-size: 200
+    max-attempts: 5
+    lease-seconds: 60
+  management:
+    enabled: false
+    admin-key: ${INTEGRATION_ADMIN_KEY:}
+  mock-sap:
+    enabled: false
+  sap:
+    base-url: ${SAP_MASTER_DATA_URL:}
+    api-key: ${SAP_MASTER_DATA_KEY:}
+
+xxl:
+  job:
+    enabled: ${XXL_JOB_ENABLED:false}
+    admin-addresses: ${XXL_JOB_ADMIN_ADDRESSES:http://localhost:9090/xxl-job-admin}
+    access-token: ${XXL_JOB_ACCESS_TOKEN:}
+    executor:
+      app-name: ${XXL_JOB_EXECUTOR_APP_NAME:procurement-integration-executor}
+      address: ${XXL_JOB_EXECUTOR_ADDRESS:}
+      ip: ${XXL_JOB_EXECUTOR_IP:}
+      port: ${XXL_JOB_EXECUTOR_PORT:9999}
+      log-path: ${XXL_JOB_LOG_PATH:./logs/xxl-job}
+      retention-days: ${XXL_JOB_LOG_RETENTION_DAYS:30}
+

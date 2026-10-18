@@ -1,0 +1,174 @@
+asyncapi: 3.0.0
+info:
+  title: Procurement Lab Domain Events
+  version: 1.0.0
+  description: RabbitMQ领域事件契约；业务库与Outbox同事务，消费者以eventId幂等。
+defaultContentType: application/json
+servers:
+  localRabbitMq:
+    host: localhost:5672
+    protocol: amqp
+    description: 本地RabbitMQ
+channels:
+  domainEvents:
+    address: procurement.domain.v1
+    messages:
+      supplierApproved: { $ref: '#/components/messages/SupplierApproved' }
+      sourcingAwarded: { $ref: '#/components/messages/SourcingAwarded' }
+      purchaseOrderCreated: { $ref: '#/components/messages/PurchaseOrderCreated' }
+      goodsReceived: { $ref: '#/components/messages/GoodsReceived' }
+      serviceAccepted: { $ref: '#/components/messages/ServiceAccepted' }
+      invoiceMatched: { $ref: '#/components/messages/InvoiceMatched' }
+      paymentRequested: { $ref: '#/components/messages/PaymentRequested' }
+      paymentCompleted: { $ref: '#/components/messages/PaymentCompleted' }
+operations:
+  publishDomainEvent:
+    action: send
+    channel: { $ref: '#/channels/domainEvents' }
+    summary: 业务服务向topic exchange发布领域事件
+  consumeDomainEvent:
+    action: receive
+    channel: { $ref: '#/channels/domainEvents' }
+    summary: 各消费者组通过独立持久队列订阅
+components:
+  messages:
+    SupplierApproved:
+      name: SupplierApproved
+      title: 供应商准入通过
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType: { const: SupplierApproved }
+              data: { $ref: '#/components/schemas/SupplierApprovedData' }
+    SourcingAwarded:
+      name: SourcingAwarded
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType: { const: SourcingAwarded }
+              data: { $ref: '#/components/schemas/SourcingAwardedData' }
+    PurchaseOrderCreated:
+      name: PurchaseOrderCreated
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType: { const: PurchaseOrderCreated }
+              data: { $ref: '#/components/schemas/PurchaseOrderData' }
+    GoodsReceived:
+      name: GoodsReceived
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType: { const: GoodsReceived }
+              data: { $ref: '#/components/schemas/FulfillmentData' }
+    ServiceAccepted:
+      name: ServiceAccepted
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType: { const: ServiceAccepted }
+              data: { $ref: '#/components/schemas/FulfillmentData' }
+    InvoiceMatched:
+      name: InvoiceMatched
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType: { const: InvoiceMatched }
+              data: { $ref: '#/components/schemas/InvoiceMatchedData' }
+    PaymentRequested:
+      name: PaymentRequested
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType: { const: PaymentRequested }
+              data: { $ref: '#/components/schemas/PaymentData' }
+    PaymentCompleted:
+      name: PaymentCompleted
+      payload:
+        allOf:
+          - $ref: '#/components/schemas/EventEnvelope'
+          - type: object
+            properties:
+              eventType: { const: PaymentCompleted }
+              data: { $ref: '#/components/schemas/PaymentData' }
+  schemas:
+    EventEnvelope:
+      type: object
+      required: [eventId, eventType, eventVersion, occurredAt, producer, aggregateType, aggregateId, aggregateVersion, correlationId, data]
+      properties:
+        eventId: { type: string, format: uuid }
+        eventType: { type: string }
+        eventVersion: { type: string, const: '1.0' }
+        occurredAt: { type: string, format: date-time }
+        producer: { type: string }
+        aggregateType: { type: string }
+        aggregateId: { type: string }
+        aggregateVersion: { type: integer, minimum: 1 }
+        correlationId: { type: string, format: uuid }
+        causationId: { type: [string, 'null'], format: uuid }
+        data: { type: object }
+    SupplierApprovedData:
+      type: object
+      required: [supplierId, supplierNo, legalName, categories]
+      properties:
+        supplierId: { type: string, format: uuid }
+        supplierNo: { type: string }
+        legalName: { type: string }
+        categories: { type: array, items: { type: string } }
+    SourcingAwardedData:
+      type: object
+      required: [awardId, rfqId, supplierId, currency, totalAmount]
+      properties:
+        awardId: { type: string, format: uuid }
+        rfqId: { type: string, format: uuid }
+        supplierId: { type: string, format: uuid }
+        currency: { type: string }
+        totalAmount: { type: string }
+    PurchaseOrderData:
+      type: object
+      required: [poId, poNo, supplierId, currency, totalAmount]
+      properties:
+        poId: { type: string, format: uuid }
+        poNo: { type: string }
+        supplierId: { type: string, format: uuid }
+        currency: { type: string }
+        totalAmount: { type: string }
+    FulfillmentData:
+      type: object
+      required: [poId, fulfillmentId, acceptedAt]
+      properties:
+        poId: { type: string, format: uuid }
+        fulfillmentId: { type: string, format: uuid }
+        acceptedAt: { type: string, format: date-time }
+    InvoiceMatchedData:
+      type: object
+      required: [invoiceId, poId, matchType, payableAmount]
+      properties:
+        invoiceId: { type: string, format: uuid }
+        poId: { type: string, format: uuid }
+        matchType: { type: string, enum: [TWO_WAY, THREE_WAY, SERVICE_THREE_WAY] }
+        payableAmount: { type: string }
+    PaymentData:
+      type: object
+      required: [paymentRequestId, supplierId, currency, amount]
+      properties:
+        paymentRequestId: { type: string, format: uuid }
+        supplierId: { type: string, format: uuid }
+        currency: { type: string }
+        amount: { type: string }
+        externalPaymentId: { type: [string, 'null'] }
+

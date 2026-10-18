@@ -1,0 +1,11 @@
+server.port: 8085
+spring:
+  application.name: settlement-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+        namespace: ${NACOS_NAMESPACE:public}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+management.endpoints.web.exposure.include: health,info,prometheus
+

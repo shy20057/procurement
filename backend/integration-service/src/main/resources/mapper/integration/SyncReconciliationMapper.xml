@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.dao.mapper.SyncReconciliationMapper">
+<delete id="deleteSeen">delete from integration_schema.sync_reconciliation_seen where run_id=#{runId}</delete>
+  <delete id="deleteDifferences">delete from integration_schema.sync_reconciliation_diff where run_id=#{runId}</delete>
+  <insert id="insertSeen">insert into integration_schema.sync_reconciliation_seen(run_id,business_key) values (#{runId},#{businessKey}) on conflict do nothing</insert>
+  <insert id="insertDifference">
+    insert into integration_schema.sync_reconciliation_diff(run_id,business_key,difference_type,source_version,target_version,repaired)
+    values (#{runId},#{businessKey},#{differenceType},#{sourceVersion},#{targetVersion},#{repaired}) on conflict(run_id,business_key) do nothing
+  </insert>
+  <sql id="targetKey"><choose>
+    <when test="type == 'COST_CENTER'">t.controlling_area||'|'||t.cost_center_code</when>
+    <otherwise>t.rate_type||'|'||t.from_currency||'|'||t.to_currency||'|'||t.effective_date::text</otherwise>
+  </choose></sql>
+  <insert id="insertMissingSource">
+    insert into integration_schema.sync_reconciliation_diff(run_id,business_key,difference_type,target_version)
+    select #{runId},<include refid="targetKey"/>,'MISSING_SOURCE',source_version from
+    <choose><when test="type == 'COST_CENTER'">integration_schema.cost_center</when>
+      <otherwise>integration_schema.exchange_rate</otherwise></choose> t
+    where not exists(select 1 from integration_schema.sync_reconciliation_seen s
+      where s.run_id=#{runId} and s.business_key=<include refid="targetKey"/>)
+    on conflict(run_id,business_key) do nothing
+  </insert>
+  <select id="countDifferences" resultType="long">select count(*) from integration_schema.sync_reconciliation_diff where run_id=#{runId}</select>
+  <select id="countUnrepaired" resultType="long">select count(*) from integration_schema.sync_reconciliation_diff where run_id=#{runId} and repaired=false</select>
+  <select id="selectDifferences" resultType="com.example.procurement.integration.dao.entity.SyncDifferenceDO">select * from integration_schema.sync_reconciliation_diff where run_id=#{runId} order by id limit 100</select>
+</mapper>

@@ -1,0 +1,33 @@
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: identity-service
+          uri: lb://identity-service
+          predicates:
+            - Path=/api/v1/auth/**
+
+        - id: supplier-service
+          uri: lb://srm-service
+          predicates:
+            - Path=/api/srm/**
+
+        - id: sourcing-service
+          uri: lb://sourcing-service
+          predicates:
+            - Path=/api/stc/**,/api/v1/rfqs/**,/api/v1/sourcing-projects/**,/api/v1/quotations/**,/api/v1/awards/**,/api/v1/bpas/**
+
+        - id: procurement-service
+          uri: lb://procurement-service
+          predicates:
+            - Path=/api/v1/purchase-requisitions/**,/api/v1/purchase-orders/**,/api/v1/goods-receipts/**,/api/v1/service-entries/**
+
+        - id: settlement-service
+          uri: lb://settlement-service
+          predicates:
+            - Path=/api/v1/invoices/**,/api/v1/payment-requests/**
+
+        - id: integration-service
+          uri: lb://integration-service
+          predicates:
+            - Path=/api/v1/integrations/**,/api/integration/**

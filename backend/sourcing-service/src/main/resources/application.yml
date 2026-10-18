@@ -1,0 +1,35 @@
+server.port: 8083
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  application:
+    name: sourcing-service
+  datasource:
+    url: ${STC_DB_URL:jdbc:postgresql://localhost:5433/procurement?currentSchema=stc_schema}
+    username: ${POSTGRES_USER:procurement}
+    password: ${POSTGRES_PASSWORD:change-me-postgres}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    schemas: stc_schema
+    default-schema: stc_schema
+    create-schemas: true
+    locations: classpath:db/stc/migration
+  sql:
+    init:
+      mode: never
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.example.procurement.sourcing.dao.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+
+spring.cloud.nacos.discovery.server-addr: ${NACOS_HOST:localhost}:${NACOS_PORT:8848}
+spring.cloud.nacos.discovery.namespace: ${NACOS_NAMESPACE:public}
+spring.cloud.nacos.discovery.group: ${NACOS_GROUP:DEFAULT_GROUP}
+
+management.endpoints.web.exposure.include: health,info,prometheus

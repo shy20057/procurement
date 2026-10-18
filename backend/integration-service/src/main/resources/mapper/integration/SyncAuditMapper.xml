@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.dao.mapper.SyncAuditMapper">
+<select id="nextPageNo" resultType="int">select coalesce(max(page_no),0)+1 from integration_schema.sync_page_audit where run_id=#{runId}</select>
+  <insert id="insertPage">insert into integration_schema.sync_page_audit(run_id,page_no,phase,from_cursor,to_cursor,fetched_count,applied_count,ignored_count)
+    values (#{runId},#{pageNo},#{phase},#{fromCursor},#{toCursor},#{fetchedCount},#{appliedCount},#{ignoredCount})</insert>
+  <insert id="insertFailure">insert into integration_schema.sync_page_failure(run_id,attempt_no,from_cursor,error_code,error_summary)
+    values (#{runId},#{attemptNo},#{fromCursor},#{errorCode},#{errorSummary})</insert>
+  <select id="selectPages" resultType="com.example.procurement.integration.dao.entity.SyncPageAuditDO">select * from integration_schema.sync_page_audit where run_id=#{runId} order by page_no desc limit 100</select>
+  <select id="selectFailures" resultType="com.example.procurement.integration.dao.entity.SyncPageFailureDO">select * from integration_schema.sync_page_failure where run_id=#{runId} order by id desc limit 100</select>
+  <delete id="deletePages">delete from integration_schema.sync_page_audit where run_id=#{runId}</delete>
+</mapper>

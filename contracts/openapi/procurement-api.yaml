@@ -1,0 +1,376 @@
+openapi: 3.1.0
+info:
+  title: Procurement Lab API
+  version: 1.0.0
+  description: Java 17 + Vue 3 采购协同项目的首批开发契约。所有写接口经API Gateway调用。
+servers:
+  - url: http://localhost:8080/api/v1
+tags:
+  - name: Suppliers
+  - name: Sourcing
+  - name: Procurement
+  - name: Settlement
+security:
+  - bearerAuth: []
+paths:
+  /suppliers:
+    post:
+      tags: [Suppliers]
+      summary: 注册供应商
+      operationId: createSupplier
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSupplierRequest' }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Supplier' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    get:
+      tags: [Suppliers]
+      summary: 分页查询供应商
+      operationId: listSuppliers
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/SupplierStatus' } }
+        - { name: keyword, in: query, schema: { type: string, maxLength: 100 } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: '#/components/schemas/Supplier' } }
+  /suppliers/{supplierId}:approve:
+    post:
+      tags: [Suppliers]
+      summary: 审批供应商准入
+      operationId: approveSupplier
+      parameters:
+        - $ref: '#/components/parameters/SupplierId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecisionRequest' }
+      responses:
+        '200':
+          description: 审批完成
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Supplier' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /rfqs:
+    post:
+      tags: [Sourcing]
+      summary: 创建询价单
+      operationId: createRfq
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateRfqRequest' }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rfq' }
+  /rfqs/{rfqId}:publish:
+    post:
+      tags: [Sourcing]
+      summary: 发布询价单并冻结当前版本
+      operationId: publishRfq
+      parameters:
+        - { name: rfqId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          description: 已发布
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rfq' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /purchase-requisitions:
+    post:
+      tags: [Procurement]
+      summary: 创建采购申请
+      operationId: createPurchaseRequisition
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePrRequest' }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PurchaseRequisition' }
+  /purchase-requisitions/{prId}:submit:
+    post:
+      tags: [Procurement]
+      summary: 提交采购申请
+      operationId: submitPurchaseRequisition
+      parameters:
+        - { name: prId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202': { description: 已受理，等待审批和预算检查 }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /purchase-orders:
+    post:
+      tags: [Procurement]
+      summary: 从已批准PR创建采购订单
+      operationId: createPurchaseOrder
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreatePoRequest' }
+      responses:
+        '201':
+          description: 已创建
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PurchaseOrder' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /purchase-orders/{poId}/goods-receipts:
+    post:
+      tags: [Procurement]
+      summary: 登记物料收货
+      operationId: createGoodsReceipt
+      parameters:
+        - { name: poId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateReceiptRequest' }
+      responses:
+        '201': { description: 已登记 }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /invoices:
+    post:
+      tags: [Settlement]
+      summary: 采集发票并发起税务核验
+      operationId: createInvoice
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInvoiceRequest' }
+      responses:
+        '202':
+          description: 已受理
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Invoice' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /payment-requests/{paymentRequestId}:submit:
+    post:
+      tags: [Settlement]
+      summary: 提交付款请求到TMS模拟适配器
+      operationId: submitPaymentRequest
+      parameters:
+        - { name: paymentRequestId, in: path, required: true, schema: { type: string, format: uuid } }
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202': { description: 已受理，最终结果通过事件更新 }
+        '409': { $ref: '#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 16, maxLength: 128 }
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema: { type: string, format: uuid }
+    SupplierId:
+      name: supplierId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+    Size: { name: size, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+  responses:
+    Conflict:
+      description: 状态、并发或幂等冲突
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ValidationError:
+      description: 字段或业务校验失败
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+  schemas:
+    SupplierStatus: { type: string, enum: [DRAFT, PENDING_REVIEW, ACTIVE, SUSPENDED, REJECTED, EXITED] }
+    Supplier:
+      type: object
+      required: [id, supplierNo, legalName, uscc, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        supplierNo: { type: string }
+        legalName: { type: string }
+        uscc: { type: string, pattern: '^[0-9A-Z]{18}$' }
+        status: { $ref: '#/components/schemas/SupplierStatus' }
+        version: { type: integer, format: int64 }
+    CreateSupplierRequest:
+      type: object
+      additionalProperties: false
+      required: [legalName, uscc, contactName, contactEmail]
+      properties:
+        legalName: { type: string, minLength: 2, maxLength: 200 }
+        uscc: { type: string, pattern: '^[0-9A-Z]{18}$' }
+        contactName: { type: string, maxLength: 100 }
+        contactEmail: { type: string, format: email }
+        categories: { type: array, minItems: 1, items: { type: string } }
+    DecisionRequest:
+      type: object
+      required: [decision, reason]
+      properties:
+        decision: { type: string, enum: [APPROVE, REJECT] }
+        reason: { type: string, minLength: 2, maxLength: 500 }
+    CreateRfqRequest:
+      type: object
+      required: [title, quotationDeadline, supplierIds, lines]
+      properties:
+        title: { type: string, maxLength: 200 }
+        quotationDeadline: { type: string, format: date-time }
+        supplierIds: { type: array, minItems: 1, items: { type: string, format: uuid } }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/LineInput' } }
+    Rfq:
+      type: object
+      required: [id, rfqNo, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        rfqNo: { type: string }
+        status: { type: string, enum: [DRAFT, PUBLISHED, QUOTING_CLOSED, EVALUATING, AWARDED, CANCELLED, FAILED] }
+        version: { type: integer }
+    CreatePrRequest:
+      type: object
+      required: [organizationId, demandType, currency, lines]
+      properties:
+        organizationId: { type: string, format: uuid }
+        demandType: { type: string, enum: [CATALOG, SOURCING, FRAMEWORK_RELEASE, EMERGENCY] }
+        sourcingAwardId: { type: string, format: uuid }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        lines: { type: array, minItems: 1, items: { $ref: '#/components/schemas/LineInput' } }
+    PurchaseRequisition:
+      type: object
+      required: [id, prNo, status, totalAmount, currency]
+      properties:
+        id: { type: string, format: uuid }
+        prNo: { type: string }
+        status: { type: string }
+        totalAmount: { type: string, pattern: '^\d{1,15}(\.\d{1,4})?$' }
+        currency: { type: string }
+    CreatePoRequest:
+      type: object
+      required: [prId, supplierId]
+      properties:
+        prId: { type: string, format: uuid }
+        supplierId: { type: string, format: uuid }
+    PurchaseOrder:
+      type: object
+      required: [id, poNo, status, version]
+      properties:
+        id: { type: string, format: uuid }
+        poNo: { type: string }
+        status: { type: string }
+        version: { type: integer, format: int64 }
+    CreateReceiptRequest:
+      type: object
+      required: [receivedAt, lines]
+      properties:
+        receivedAt: { type: string, format: date-time }
+        lines:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [poLineId, receivedQuantity]
+            properties:
+              poLineId: { type: string, format: uuid }
+              receivedQuantity: { type: string, pattern: '^\d{1,15}(\.\d{1,4})?$' }
+    CreateInvoiceRequest:
+      type: object
+      required: [supplierId, invoiceCode, invoiceNumber, sellerTaxId, totalAmount, currency, poId]
+      properties:
+        supplierId: { type: string, format: uuid }
+        invoiceCode: { type: string, maxLength: 32 }
+        invoiceNumber: { type: string, maxLength: 32 }
+        sellerTaxId: { type: string, maxLength: 32 }
+        totalAmount: { type: string, pattern: '^\d{1,15}(\.\d{1,4})?$' }
+        currency: { type: string, pattern: '^[A-Z]{3}$' }
+        poId: { type: string, format: uuid }
+    Invoice:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: string, format: uuid }
+        status: { type: string, enum: [CAPTURED, TAX_CHECKING, VERIFIED, MATCHING, MATCHED, BLOCKED, POSTED] }
+    LineInput:
+      type: object
+      required: [description, itemType, quantity, unit, estimatedUnitPrice]
+      properties:
+        description: { type: string, maxLength: 500 }
+        itemType: { type: string, enum: [MATERIAL, SERVICE] }
+        quantity: { type: string, pattern: '^\d{1,15}(\.\d{1,4})?$' }
+        unit: { type: string, maxLength: 16 }
+        estimatedUnitPrice: { type: string, pattern: '^\d{1,15}(\.\d{1,4})?$' }
+    Page:
+      type: object
+      required: [page, size, totalElements]
+      properties:
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer, format: int64 }
+    Problem:
+      type: object
+      required: [type, title, status, code, correlationId]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+        correlationId: { type: string }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+

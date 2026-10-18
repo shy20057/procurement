@@ -1,0 +1,12 @@
+spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+    gateway:
+      routes:
+        # 开发环境所有 API 均由聚合服务提供
+        - id: aggregation-service
+          uri: ${AGGREGATION_SERVICE_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/**

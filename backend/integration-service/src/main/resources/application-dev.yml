@@ -1,0 +1,16 @@
+spring:
+  cloud.nacos.discovery.enabled: false
+integration:
+  management.enabled: true
+  mock-sap:
+    enabled: true
+    api-key: ${MOCK_SAP_API_KEY:local-sap-demo}
+xxl:
+  job:
+    enabled: ${XXL_JOB_ENABLED:true}
+    admin-addresses: ${XXL_JOB_ADMIN_ADDRESSES:http://localhost:9090/xxl-job-admin}
+    access-token: ${XXL_JOB_ACCESS_TOKEN:local-procurement-xxl-token}
+    executor:
+      app-name: ${XXL_JOB_EXECUTOR_APP_NAME:procurement-integration-executor}
+      address: ${XXL_JOB_EXECUTOR_ADDRESS:http://host.docker.internal:9999}
+      port: ${XXL_JOB_EXECUTOR_PORT:9999}

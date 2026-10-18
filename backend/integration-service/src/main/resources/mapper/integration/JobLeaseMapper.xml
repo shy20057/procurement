@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.dao.mapper.JobLeaseMapper">
+<!-- PostgreSQL UPDATE RETURNING 是有副作用的查询，必须禁用缓存并标记 affectData。 -->
+  <select id="acquire" resultType="long" flushCache="true" useCache="false" affectData="true">
+    update integration_schema.job_lease set owner_id=#{owner},fence_token=fence_token+1,
+      lease_until=clock_timestamp()+(#{seconds} * interval '1 second'),heartbeat_at=clock_timestamp()
+    where resource_key=#{resourceKey} and lease_until&lt;clock_timestamp() returning fence_token
+  </select>
+  <select id="lockOwned" resultType="long">
+    select fence_token from integration_schema.job_lease where resource_key=#{resourceKey}
+      and owner_id=#{owner} and fence_token=#{token} and lease_until&gt;clock_timestamp() for update
+  </select>
+  <select id="lockState" resultType="com.example.procurement.integration.dto.domain.LeaseStateDTO">
+    select owner_id,fence_token,lease_until&lt;clock_timestamp() as expired
+    from integration_schema.job_lease where resource_key=#{resourceKey} for update
+  </select>
+  <update id="renew">
+    update integration_schema.job_lease set lease_until=clock_timestamp()+(#{seconds} * interval '1 second'),
+      heartbeat_at=clock_timestamp() where resource_key=#{resourceKey}
+      and owner_id=#{owner} and fence_token=#{token} and lease_until&gt;clock_timestamp()
+  </update>
+  <update id="release">update integration_schema.job_lease set lease_until='-infinity',owner_id=null
+    where resource_key=#{resourceKey} and owner_id=#{owner} and fence_token=#{token}
+  </update>
+</mapper>

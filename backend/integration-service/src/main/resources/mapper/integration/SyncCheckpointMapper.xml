@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.dao.mapper.SyncCheckpointMapper">
+<select id="selectByJob" resultType="com.example.procurement.integration.dao.entity.SyncCheckpointDO">select * from integration_schema.sync_checkpoint where job_code=#{jobCode}</select>
+  <update id="save">update integration_schema.sync_checkpoint set committed_cursor=#{cursor},baseline_complete=#{complete},version=version+1 where job_code=#{jobCode}</update>
+  <update id="markSuccess">update integration_schema.sync_checkpoint set last_success_at=clock_timestamp() where job_code=#{jobCode}</update>
+  <update id="resetIncomplete">update integration_schema.sync_checkpoint set committed_cursor=null,version=version+1 where job_code=#{jobCode} and baseline_complete=false</update>
+</mapper>

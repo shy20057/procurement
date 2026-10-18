@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.mock.dao.mapper.MockSapMapper">
+  <select id="lockStream" resultType="long">select sequence_no from mock_sap_schema.stream_clock where entity_type=#{type} for update</select>
+  <select id="currentSequence" resultType="long">select sequence_no from mock_sap_schema.stream_clock where entity_type=#{type}</select>
+  <select id="selectVersion" resultType="long">select source_version from mock_sap_schema.master_record where entity_type=#{type} and business_key=#{key}</select>
+  <insert id="upsertRecord">
+    insert into mock_sap_schema.master_record(entity_type,business_key,source_version,record_json)
+    values (#{type},#{key},#{version},#{json}) on conflict(entity_type,business_key)
+    do update set source_version=excluded.source_version,record_json=excluded.record_json
+  </insert>
+  <insert id="insertChange">insert into mock_sap_schema.change_event(entity_type,sequence_no,record_json) values (#{type},#{sequence},#{json})</insert>
+  <update id="updateSequence">update mock_sap_schema.stream_clock set sequence_no=#{sequence} where entity_type=#{type}</update>
+  <select id="count" resultType="long">select count(*) from mock_sap_schema.master_record where entity_type=#{type}</select>
+  <select id="selectPage" resultType="com.example.procurement.integration.mock.dao.entity.MockMasterRecordDO">
+    select * from mock_sap_schema.master_record where entity_type=#{type} order by business_key limit #{size} offset #{offset}
+  </select>
+  <select id="selectChanges" resultType="com.example.procurement.integration.mock.dao.entity.MockChangeDO">
+    select sequence_no,record_json from mock_sap_schema.change_event where entity_type=#{type}
+      and sequence_no&gt;#{after} and sequence_no&lt;=#{upper} order by sequence_no limit #{limit}
+  </select>
+  <insert id="insertSnapshot">insert into mock_sap_schema.snapshot(id,entity_type,baseline_cursor,record_count) values (#{id},#{type},#{cursor},#{count})</insert>
+  <insert id="copySnapshot">
+    insert into mock_sap_schema.snapshot_item(snapshot_id,item_no,record_json)
+    select #{id},row_number() over(order by business_key),record_json from mock_sap_schema.master_record where entity_type=#{type}
+  </insert>
+  <select id="selectSnapshot" resultType="com.example.procurement.integration.mock.dao.entity.MockSnapshotDO">
+    select id,baseline_cursor,record_count from mock_sap_schema.snapshot
+    where id=#{id} and entity_type=#{type} and created_at&gt;clock_timestamp()-interval '24 hours'
+  </select>
+  <select id="selectSnapshotPage" resultType="com.example.procurement.integration.mock.dao.entity.MockChangeDO">
+    select item_no as sequence_no,record_json from mock_sap_schema.snapshot_item
+    where snapshot_id=#{id} and item_no&gt;#{after} order by item_no limit #{limit}
+  </select>
+  <update id="setUnavailable">update mock_sap_schema.stream_clock set unavailable=#{unavailable} where entity_type=#{type}</update>
+  <select id="isUnavailable" resultType="boolean">select unavailable from mock_sap_schema.stream_clock where entity_type=#{type}</select>
+</mapper>

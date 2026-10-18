@@ -1,0 +1,48 @@
+spring:
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+    gateway:
+      routes:
+        # 开发环境的业务模块装配在聚合服务进程内
+        # 身份认证
+        - id: identity-service
+          uri: ${AGGREGATION_SERVICE_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/v1/auth/**
+
+        # 供应商 SRM 服务
+        - id: supplier-service
+          uri: ${AGGREGATION_SERVICE_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/srm/**
+
+        # 寻源服务
+        - id: sourcing-service
+          uri: ${AGGREGATION_SERVICE_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/stc/**,/api/v1/rfqs/**,/api/v1/sourcing-projects/**,/api/v1/quotations/**,/api/v1/awards/**,/api/v1/bpas/**
+
+        # 采购执行服务
+        - id: procurement-service
+          uri: ${AGGREGATION_SERVICE_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/v1/purchase-requisitions/**,/api/v1/purchase-orders/**,/api/v1/goods-receipts/**,/api/v1/service-entries/**
+
+        # 结算服务
+        - id: settlement-service
+          uri: ${AGGREGATION_SERVICE_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/v1/invoices/**,/api/v1/payment-requests/**
+
+        # 主数据服务
+        - id: masterdata-service
+          uri: ${AGGREGATION_SERVICE_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/v1/materials/**,/api/v1/organizations/**,/api/v1/employees/**,/api/v1/price-lists/**,/api/v1/supplier-quotas/**
+
+        - id: integration-service
+          uri: ${AGGREGATION_SERVICE_URL:http://localhost:8090}
+          predicates:
+            - Path=/api/v1/integrations/**,/api/integration/**

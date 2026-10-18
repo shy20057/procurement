@@ -1,0 +1,135 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=DM+Serif+Display:ital@0;1&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* ── DeepSeek 鲸鱼蓝色板 ── */
+  --whale:          #4d6bfe;   /* DeepSeek 品牌蓝 */
+  --whale-hover:    #3b58e8;
+  --whale-cyan:     #38bdf8;   /* 鲸尾青蓝 */
+  --whale-deep:     #0b1e4b;   /* 深海藏蓝（仅小面积文字/强调用） */
+  --whale-dark:     #12306b;
+  --whale-light:    #eef2ff;   /* 浅鲸蓝底 */
+  --whale-mute:     #dfe8ff;
+
+  /* ── 渐变 ── */
+  --grad-whale:     linear-gradient(135deg, #4d6bfe 0%, #38bdf8 100%);
+  --grad-whale-soft:linear-gradient(135deg, #eef2ff 0%, #e0f2fe 100%);
+  --grad-mist:      linear-gradient(120deg, #ffffff 0%, #eef4ff 55%, #e0ecff 100%);
+  --grad-card-blue: linear-gradient(135deg, #f6f9ff 0%, #e8f0ff 55%, #deebff 100%);
+  --grad-text:      linear-gradient(120deg, #4d6bfe 0%, #38bdf8 100%);
+
+  /* ── 语义变量（重映射至鲸蓝体系） ── */
+  --ink:          #16224a;
+  --paper:        #f7faff;
+  --rule:         #dce5f8;
+  --signal:       #4d6bfe;
+  --signal-mute:  #eef2ff;
+  --memo:         #5b6b8c;
+  --white:        #ffffff;
+  --shadow-sm:    0 1px 3px rgba(77, 107, 254, 0.06);
+  --shadow-md:    0 6px 18px rgba(77, 107, 254, 0.14);
+  --shadow-glow:  0 4px 16px rgba(77, 107, 254, 0.28);
+
+  --sans:  'DM Sans', system-ui, -apple-system, sans-serif;
+  --serif: 'DM Serif Display', Georgia, serif;
+  --mono:  'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+
+  font: 14px/1.6 var(--sans);
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body { margin: 0; }
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Typography & Utility classes */
+.mono {
+  font-family: var(--mono);
+}
+.memo {
+  color: var(--memo);
+}
+.bill-no {
+  font-family: var(--mono);
+  font-weight: 600;
+  color: var(--whale);
+}
+.amount {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+
+/* ── Element Plus 鲸蓝主题覆盖 ── */
+:root {
+  --el-color-primary: #4d6bfe;
+  --el-color-primary-light-3: #7c92fe;
+  --el-color-primary-light-5: #a5b6ff;
+  --el-color-primary-light-7: #cdd8ff;
+  --el-color-primary-light-8: #dfe8ff;
+  --el-color-primary-light-9: #eef2ff;
+  --el-color-primary-dark-2: #3b58e8;
+}
+
+.el-button--primary {
+  --el-button-bg-color: #4d6bfe;
+  --el-button-border-color: #4d6bfe;
+  --el-button-hover-bg-color: #3b58e8;
+  --el-button-hover-border-color: #3b58e8;
+  --el-button-active-bg-color: #2f47c9;
+  background-image: var(--grad-whale);
+  border: none;
+  box-shadow: 0 2px 8px rgba(77, 107, 254, 0.3);
+  transition: all 0.2s ease;
+}
+.el-button--primary:hover {
+  box-shadow: var(--shadow-glow);
+  transform: translateY(-1px);
+}
+.el-button--default {
+  --el-button-border-color: var(--rule);
+  --el-button-hover-bg-color: var(--whale-light);
+  --el-button-hover-border-color: var(--whale);
+  --el-button-hover-color: var(--whale);
+  color: var(--ink);
+}
+.el-button.is-link.el-button--primary,
+.el-button.is-text.el-button--primary {
+  background-image: none;
+  box-shadow: none;
+  color: var(--whale);
+}
+.el-table {
+  --el-table-border-color: var(--rule);
+  --el-table-header-bg-color: #eef2ff;
+  --el-table-row-hover-bg-color: #f0f5ff;
+  font-size: 13.5px;
+}
+.el-table th.el-table__cell {
+  font-weight: 600;
+  color: var(--whale-dark);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.el-form-item__label { color: var(--memo); font-size: 13px; }
+.el-input__wrapper { border-radius: var(--radius-sm); }
+.el-select .el-input__wrapper { border-radius: var(--radius-sm); }
+.el-tag { border-radius: var(--radius-sm); font-size: 12px; }
+.el-tag--primary {
+  --el-tag-bg-color: var(--whale-light);
+  --el-tag-border-color: var(--whale-mute);
+  --el-tag-text-color: var(--whale);
+}
+.el-dialog { border-radius: var(--radius-md); }
+.el-card { border-radius: var(--radius-md); }

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.dao.mapper.JobRunMapper">
+<select id="selectById" resultType="com.example.procurement.integration.dao.entity.JobRunDO">select * from integration_schema.job_run where run_id=#{runId}</select>
+  <select id="lockRun" resultType="com.example.procurement.integration.dao.entity.JobRunDO">select * from integration_schema.job_run where run_id=#{runId} for update</select>
+  <select id="lockXxlIdentity" resultType="com.example.procurement.integration.dao.entity.JobRunDO">
+    select * from integration_schema.job_run where job_code=#{jobCode} and xxl_job_id=#{jobId}
+      and xxl_log_key=#{logKey} and xxl_shard_index=#{shardIndex} for update
+  </select>
+  <select id="selectActiveResource" resultType="com.example.procurement.integration.dao.entity.JobRunDO">
+    select r.* from integration_schema.job_run r join integration_schema.job_definition d using(job_code)
+    where d.resource_key=#{resourceKey} and r.status in ('PENDING','RUNNING','RETRY_WAIT','CANCEL_REQUESTED')
+    <if test="excludedRun != null">and r.run_id != #{excludedRun}</if>
+    order by r.created_at limit 1
+  </select>
+  <select id="lockLocalCandidates" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
+    select r.*,d.resource_key from integration_schema.job_run r
+    join integration_schema.job_definition d using(job_code)
+    where d.enabled=true and r.trigger_type&lt;&gt;'XXL'
+      and (r.status='PENDING' or (r.status='RETRY_WAIT' and r.next_retry_at&lt;=clock_timestamp()))
+    order by r.created_at limit 20 for update of r skip locked
+  </select>
+  <select id="lockExactCandidate" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
+    select r.*,d.resource_key,d.enabled from integration_schema.job_run r
+    join integration_schema.job_definition d using(job_code) where r.run_id=#{runId} for update of r,d
+  </select>
+  <select id="lockStaleRuns" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
+    select r.*,d.resource_key from integration_schema.job_run r
+    join integration_schema.job_definition d using(job_code)
+    join integration_schema.job_lease l on l.resource_key=d.resource_key
+    where r.status in ('RUNNING','CANCEL_REQUESTED') and
+      (l.lease_until&lt;clock_timestamp() or r.owner_id is distinct from l.owner_id
+       or r.fence_token is distinct from l.fence_token) for update of r skip locked
+  </select>
+  <insert id="insert" parameterType="com.example.procurement.integration.dao.entity.JobRunDO">
+    insert into integration_schema.job_run(run_id,job_code,mode,trigger_type,parent_run_id,request_id,reason,status,
+      xxl_job_id,xxl_log_key,xxl_shard_index,xxl_shard_total,executor_address)
+    values (#{runId},#{jobCode},#{mode},#{triggerType},#{parentRunId},#{requestId},#{reason},'PENDING',
+      #{xxlJobId},#{xxlLogKey},#{xxlShardIndex},#{xxlShardTotal},#{executorAddress})
+  </insert>
+  <update id="markRunning">
+    update integration_schema.job_run set status='RUNNING',owner_id=#{owner},fence_token=#{token},attempt_no=#{attempt},
+      started_at=coalesce(started_at,clock_timestamp()),error_code=null,error_summary=null,finished_at=null where run_id=#{runId}
+  </update>
+  <update id="finishPending">
+    update integration_schema.job_run set status='FAILED',error_code=#{code},error_summary=#{summary},
+      finished_at=clock_timestamp(),next_retry_at=null where run_id=#{runId} and status='PENDING'
+  </update>
+  <update id="markSuccess">
+    update integration_schema.job_run set status='SUCCEEDED',phase='COMPLETED',
+      finished_at=clock_timestamp(),next_retry_at=null where run_id=#{runId}
+  </update>
+  <update id="markFailure">
+    update integration_schema.job_run set status=#{status},error_code=#{code},error_summary=#{summary},
+      next_retry_at=case when #{retry} then clock_timestamp()+(#{delay} * interval '1 second') else null end,
+      finished_at=case when #{retry} then null else clock_timestamp() end where run_id=#{runId}
+  </update>
+  <update id="cancel">
+    update integration_schema.job_run set status=case when status='RUNNING' then 'CANCEL_REQUESTED' else 'CANCELLED' end,
+      finished_at=case when status='RUNNING' then null else clock_timestamp() end
+    where run_id=#{runId} and status in ('PENDING','RUNNING','RETRY_WAIT')
+  </update>
+  <update id="markCancelled">
+    update integration_schema.job_run set status='CANCELLED',finished_at=clock_timestamp()
+    where run_id=#{runId} and owner_id=#{owner} and fence_token=#{token} and status='CANCEL_REQUESTED'
+  </update>
+  <update id="recover">
+    update integration_schema.job_run set status=#{status},
+      next_retry_at=case when #{status}='RETRY_WAIT' then clock_timestamp() else null end,
+      finished_at=case when #{status} in ('FAILED','CANCELLED') then clock_timestamp() else null end,
+      error_code='LEASE_EXPIRED',error_summary='执行实例失联，已从最后成功页恢复' where run_id=#{runId}
+  </update>
+  <select id="countActive" resultType="long">
+    select count(*) from integration_schema.job_run
+    where status in ('PENDING','RUNNING','RETRY_WAIT','CANCEL_REQUESTED')
+    <if test="jobCode != null">and job_code=#{jobCode}</if>
+  </select>
+  <select id="countRuns" resultType="long">select count(*) from integration_schema.job_run
+    <where><if test="jobCode != null">job_code=#{jobCode}</if></where>
+  </select>
+  <select id="selectPage" resultType="com.example.procurement.integration.dao.entity.JobRunDO">
+    select * from integration_schema.job_run
+    <where><if test="jobCode != null">job_code=#{jobCode}</if></where>
+    order by created_at desc limit #{size} offset #{offset}
+  </select>
+  <update id="startBaseline">update integration_schema.job_run set phase='BASELINE',total_count=total_count+#{count} where run_id=#{runId}</update>
+  <update id="updateProgress">
+    update integration_schema.job_run set phase=#{phase},fetched_count=fetched_count+#{fetched},
+      applied_count=applied_count+#{applied},ignored_count=ignored_count+#{ignored} where run_id=#{runId}
+  </update>
+  <update id="updateTotal">update integration_schema.job_run set total_count=greatest(total_count,fetched_count+#{remaining}) where run_id=#{runId}</update>
+  <update id="startReconciliation">update integration_schema.job_run set fetched_count=0,applied_count=0,ignored_count=0,total_count=#{count},phase='RECONCILE' where run_id=#{runId}</update>
+</mapper>

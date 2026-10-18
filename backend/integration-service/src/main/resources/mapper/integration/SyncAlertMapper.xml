@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.procurement.integration.dao.mapper.SyncAlertMapper">
+<insert id="upsert">
+    insert into integration_schema.sync_alert(job_code,run_id,category,severity,dedup_key,summary)
+    values (#{jobCode},#{runId},#{category},'ERROR',#{dedupKey},#{summary})
+    on conflict(dedup_key) do update set run_id=excluded.run_id,summary=excluded.summary,last_seen_at=clock_timestamp(),
+      first_seen_at=case when integration_schema.sync_alert.status='RESOLVED' then clock_timestamp() else integration_schema.sync_alert.first_seen_at end,
+      occurrence_count=case when integration_schema.sync_alert.status='RESOLVED' then 1 else integration_schema.sync_alert.occurrence_count+1 end,
+      status=case when integration_schema.sync_alert.status='RESOLVED' then 'OPEN' else integration_schema.sync_alert.status end
+  </insert>
+  <update id="resolveSync">update integration_schema.sync_alert set status='RESOLVED' where job_code=#{jobCode} and category in ('SYNC_FAILURE','STALE')</update>
+  <update id="resolveReconciliation">update integration_schema.sync_alert set status='RESOLVED' where job_code=#{jobCode} and category='RECONCILIATION'</update>
+  <select id="selectStaleJobCodes" resultType="string">
+    select c.job_code from integration_schema.sync_checkpoint c join integration_schema.job_definition d using(job_code)
+    where d.enabled=true and
+    ((c.job_code='SAP_COST_CENTER_DELTA' and coalesce(c.last_success_at,to_timestamp(0))&lt;clock_timestamp()-interval '30 minutes')
+      or (c.job_code='SAP_EXCHANGE_RATE_DELTA' and (clock_timestamp() at time zone 'Asia/Shanghai')::time&gt;=time '03:00'
+       and (c.last_success_at is null or (c.last_success_at at time zone 'Asia/Shanghai')::date&lt;(clock_timestamp() at time zone 'Asia/Shanghai')::date)))
+  </select>
+  <select id="countOpen" resultType="long">select count(*) from integration_schema.sync_alert where status&lt;&gt;'RESOLVED'</select>
+  <select id="countAll" resultType="long">select count(*) from integration_schema.sync_alert</select>
+  <select id="selectPage" resultType="com.example.procurement.integration.dao.entity.SyncAlertDO">select * from integration_schema.sync_alert order by (status='RESOLVED'),last_seen_at desc limit #{size} offset #{offset}</select>
+  <update id="acknowledge">update integration_schema.sync_alert set status='ACKNOWLEDGED' where id=#{id} and status='OPEN'</update>
+</mapper>
