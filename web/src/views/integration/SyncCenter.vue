@@ -2,7 +2,7 @@
   <div class="sync-page">
     <header class="page-heading">
       <div><span class="eyebrow">INTEGRATION / SAP MASTER DATA</span><h1>主数据同步中心</h1><p>让外围系统的每一次变化，都有进度、记录与回执。</p></div>
-      <div class="heading-actions"><span class="live-label"><i :class="{ busy: overview?.activeRunCount }" />{{ overview?.activeRunCount ? '任务运行中 · 每5秒刷新' : '每5秒刷新' }}</span><el-button @click="configureKey">管理密钥</el-button><el-button :loading="loading" @click="refresh">刷新看板</el-button></div>
+      <div class="heading-actions"><span class="live-label"><i :class="{ busy: overview?.activeRunCount }" />{{ overview?.activeRunCount ? '任务运行中' : '手动刷新' }}</span><el-button @click="configureKey">管理密钥</el-button><el-button :loading="loading" @click="refresh">刷新看板</el-button></div>
     </header>
 
     <el-alert v-if="loadFailed" class="connection-error" title="无法读取同步数据，请确认后端已重启、数据库迁移已完成，且网关已加载新的集成路由。" type="error" :closable="false" show-icon />
@@ -83,7 +83,6 @@ const alerts = ref<SyncAlert[]>([]), alertPage = ref(1), alertTotal = ref(0)
 const selectedRun = ref<string | null>(null), triggering = ref<string | null>(null)
 const requestKeys = new Map<string, string>()
 const adminUrl = computed(() => safeXxlAdminUrl(overview.value?.xxlAdminUrl))
-let timer: ReturnType<typeof setInterval> | undefined
 let disposed = false
 let dataGeneration = 0
 
@@ -150,8 +149,8 @@ async function acknowledge(id: number) { try { await integrationApi.acknowledge(
 async function configureKey() {
   try { const { value } = await ElMessageBox.prompt('仅当后端配置了 INTEGRATION_ADMIN_KEY 时需要填写。密钥只保存在当前浏览器会话；留空清除。', '集成管理密钥', { inputType: 'password' }); if (value) sessionStorage.setItem('integration-admin-key', value); else sessionStorage.removeItem('integration-admin-key'); ElMessage.success('会话配置已保存') } catch { /* Dialog cancellation. */ }
 }
-onMounted(() => { void refresh(); timer = setInterval(() => { if (!document.hidden && !loadFailed.value) void refresh() }, 5000) })
-onUnmounted(() => { disposed = true; dataGeneration++; if (timer) clearInterval(timer) })
+onMounted(() => { void refresh() })
+onUnmounted(() => { disposed = true; dataGeneration++ })
 </script>
 
 <style scoped>

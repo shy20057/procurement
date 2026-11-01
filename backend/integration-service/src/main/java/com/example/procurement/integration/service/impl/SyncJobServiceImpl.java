@@ -63,22 +63,23 @@ public class SyncJobServiceImpl implements SyncJobService {
         this.tx = new TransactionTemplate(transactionManager);
     }
 
-    /* 幂等提交：同一个 request_id 返回原运行，不重复创建任务。 */
+    /* 幂等提交：同一个 request_id 返回原运行，不重复创建任务。   本质上就是改数据库*/
     @Override
     public UUID submit(String jobCode, String mode, String requestId, String reason, String trigger, UUID parent) {
-        MasterDataType.forJob(jobCode);
-        validateRequest(mode, requestId, reason);
-        return tx.execute(status -> {
-            JobDefinitionDO definition = lockDefinition(jobCode);
-            JobRequestKeyDO previous = requests.selectByRequestId(requestId);
+        MasterDataType.forJob(jobCode); // 任务校验
+        validateRequest(mode, requestId, reason); // 提交参数校验
+        return tx.execute(status -> { // 开启事务
+            JobDefinitionDO definition = lockDefinition(jobCode); // 查询同步任务配置表  select * from integration_schema.job_definition where job_code=#{jobCode} for update
+            JobRequestKeyDO previous = requests.selectByRequestId(requestId); // 幂等键登记表 返回为null证明是第一次请求
             if (previous != null) {
                 if (!jobCode.equals(previous.getJobCode()) || !mode.equals(previous.getMode())) {
                     throw problem("IDEMPOTENCY_CONFLICT", "同一幂等键不能用于不同任务", 409);
                 }
                 return previous.getRunId();
             }
-            if (!Boolean.TRUE.equals(definition.getEnabled())) throw problem("JOB_DISABLED", "当前任务已被业务执行开关停用", 409);
-            JobRunDO active = runs.selectActiveResource(definition.getResourceKey(), null);
+            if (!Boolean.TRUE.equals(definition.getEnabled()))
+                throw problem("JOB_DISABLED", "当前任务已被业务执行开关停用", 409);
+            JobRunDO active = runs.selectActiveResource(definition.getResourceKey(), null); //  查这条数据资源上当前有没有正在占用它的任务。
             UUID id;
             if (active != null) {
                 if (!jobCode.equals(active.getJobCode()) || !mode.equals(active.getMode())) {
@@ -86,12 +87,12 @@ public class SyncJobServiceImpl implements SyncJobService {
                 }
                 id = active.getRunId();
             } else {
-                JobRunDO run = newRun(jobCode, mode, requestId, reason, trigger);
+                JobRunDO run = newRun(jobCode, mode, requestId, reason, trigger); //  造一条待插入的运行记录对象 插入job_run
                 run.setParentRunId(parent);
                 runs.insert(run);
                 id = run.getRunId();
             }
-            insertRequest(requestId, id, jobCode, mode);
+            insertRequest(requestId, id, jobCode, mode); //  job_request_key 这个请求对应哪次运行（幂等）
             return id;
         });
     }
@@ -258,7 +259,7 @@ public class SyncJobServiceImpl implements SyncJobService {
     public JobRunDO findRun(UUID runId) { return runs.selectById(runId); }
 
     private JobDefinitionDO lockDefinition(String jobCode) {
-        JobDefinitionDO definition = definitions.lockDefinition(jobCode);
+        JobDefinitionDO definition = definitions.lockDefinition(jobCode); // 同步任务配置表
         if (definition == null) throw problem("NOT_FOUND", "任务定义不存在", 404);
         return definition;
     }

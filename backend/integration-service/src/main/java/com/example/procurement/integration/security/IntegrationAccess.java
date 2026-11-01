@@ -13,8 +13,8 @@ import org.springframework.stereotype.Component;
  * */
 @Component
 public class IntegrationAccess {
-    private final boolean enabled;
-    private final String adminKey;
+    private final boolean enabled;   // 是否启用集成管理写操作:来自 integration.management.enabled,关闭时所有写接口直接 403
+    private final String adminKey;   // 管理密钥:来自 integration.management.admin-key,写入端点需在请求头 X-Integration-Admin-Key 中携带
     public IntegrationAccess(@Value("${integration.management.enabled:false}") boolean enabled,
                              @Value("${integration.management.admin-key:}") String adminKey) {
         this.enabled = enabled; this.adminKey = adminKey;

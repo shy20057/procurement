@@ -65,6 +65,7 @@ public class MockSapController {
         return EnvelopeRespDTO.ok(service.save(body));
     }
 
+    // 下面三个接口是源端给SRM同步服务调用的只读接口
     @GetMapping("/{type}/changes")
     public SourcePageRespDTO changes(@PathVariable MasterDataType type, @RequestParam String after,
                                      @RequestParam(required = false) String upper,

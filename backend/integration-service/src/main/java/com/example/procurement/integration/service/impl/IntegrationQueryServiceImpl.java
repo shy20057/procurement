@@ -137,7 +137,7 @@ public class IntegrationQueryServiceImpl implements IntegrationQueryService {
     public SyncCheckpointRespDTO checkpoint(String jobCode) {
         MasterDataType type = MasterDataType.forJob(jobCode);
         SyncCheckpointDO stored = checkpoints.selectByJob(jobCode);
-        SyncCheckpoint state = stored == null || stored.getCommittedCursor() == null
+        SyncCheckpoint state = stored == null || stored.getCommittedCursor() == null || stored.getCommittedCursor().isBlank()
                 ? SyncCheckpoint.initial(type) : codec.read(stored.getCommittedCursor(), SyncCheckpoint.class);
         return new SyncCheckpointRespDTO(state.mode(), state.sourceCursor(), state.snapshotId(),
                 state.snapshotPosition(), state.baselineCursor(), state.upperCursor());
