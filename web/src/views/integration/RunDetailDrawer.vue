@@ -83,6 +83,7 @@ async function cancel() {
   try { await ElMessageBox.confirm('当前页会在安全边界结束，已成功数据不会撤回。', '取消运行', { type: 'warning' }); await integrationApi.cancel(detail.value.runId); await refresh(); emit('changed') } catch { /* Dialog cancellation. */ }
 }
 watch(() => props.runId, () => { generation++; loading.value = false; loadFailed.value = false; detail.value = null; void refresh() }, { immediate: true })
+watch(() => detail.value?.status, (status, previous) => { if (previous && isActiveRun(previous) && status && !isActiveRun(status)) emit('changed') })
 onMounted(() => { timer = setInterval(() => { if (props.runId && !loadFailed.value && !document.hidden && (!detail.value || isActiveRun(detail.value.status))) void refresh() }, 2000) })
 onUnmounted(() => { generation++; if (timer) clearInterval(timer) })
 </script>

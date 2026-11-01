@@ -47,10 +47,12 @@ public class MasterDataPersistenceServiceImpl implements MasterDataPersistenceSe
         this.leases = leases; this.alerts = alerts; this.codec = codec; this.settings = settings;
     }
 
+    private boolean isBlank(String value) { return value == null || value.isBlank(); }
+
     @Override
     public SyncCheckpoint checkpoint(MasterDataType type) {
         SyncCheckpointDO checkpoint = checkpoints.selectByJob(type.jobCode);
-        return checkpoint == null || checkpoint.getCommittedCursor() == null ? SyncCheckpoint.initial(type)
+        return checkpoint == null || isBlank(checkpoint.getCommittedCursor()) ? SyncCheckpoint.initial(type)
                 : codec.read(checkpoint.getCommittedCursor(), SyncCheckpoint.class);
     }
 
