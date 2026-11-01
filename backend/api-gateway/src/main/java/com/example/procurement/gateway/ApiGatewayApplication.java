@@ -11,7 +11,7 @@ import org.springframework.core.annotation.Order;
 @SpringBootApplication
 public class ApiGatewayApplication {
     public static void main(String[] args) { SpringApplication.run(ApiGatewayApplication.class, args); }
-     //1
+
     @Bean
     @Order(Ordered.HIGHEST_PRECEDENCE)
     GlobalFilter correlationIdFilter() {
