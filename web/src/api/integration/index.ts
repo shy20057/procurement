@@ -15,9 +15,12 @@ const base = '/api/integration'
 export const integrationApi = {
   overview: () => get<Overview>(`${base}/overview`),
   records: (type: DataType, page: number, keyword: string) => get<Page<TargetRecord>>(`${base}/${type === 'COST_CENTER' ? 'cost-centers' : 'exchange-rates'}`, { page, size: 20, keyword }),
+  // ① 运行记录列表：前端在这里筛出 status=FAILED/CANCELLED 的行，拿到它的 runId（另一条来源是 overview 的 latestRunId）
   runs: (page: number) => get<Page<SyncRun>>(`${base}/job-runs`, { page, size: 20 }),
+  // ② 运行详情：用①拿到的 runId 查单条，拿到 status；详情抽屉里的「失败补偿/重试」按钮靠它决定显不显示
   run: (id: string) => get<RunDetail>(`${base}/job-runs/${id}`),
   trigger: (code: string, mode: RunMode, reason: string, key: string) => post<SyncRun>(`${base}/jobs/${code}/runs`, { mode, reason }, key),
+  // ③ 人工补偿重试：把②确认过是 FAILED 的那个 runId 原样带回，后端据此新建一条 RETRY 运行（parent_run_id 指向原 run）
   retry: (id: string, reason: string, key: string) => post<SyncRun>(`${base}/job-runs/${id}/retry`, { reason }, key),
   cancel: (id: string) => post<SyncRun>(`${base}/job-runs/${id}/cancel`, {}),
   enable: async (code: string, enabled: boolean) => (await request.patch<Envelope<unknown>>(`${base}/jobs/${code}`, { enabled }, { headers: adminHeaders() })).data.data,

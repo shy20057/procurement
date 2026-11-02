@@ -79,7 +79,7 @@ public class IntegrationController {
         return EnvelopeRespDTO.ok(queries.definitions());
     }
 
-    @GetMapping("/exchange-rates/resolve") //
+    @GetMapping("/exchange-rates/resolve") // 无用
     public EnvelopeRespDTO<ExchangeRateRespDTO> resolve(@RequestParam String fromCurrency, @RequestParam String toCurrency,
                                                         @RequestParam(defaultValue = "M") String rateType,
                                                         @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate businessDate) {
@@ -87,7 +87,7 @@ public class IntegrationController {
     }
 
 
-    @GetMapping("/jobs/{jobCode}/checkpoint") // 【重要】
+    @GetMapping("/jobs/{jobCode}/checkpoint") // 【重要】 查某个同步任务的「同步进度」—— 它上次同步到哪了
     public EnvelopeRespDTO<SyncCheckpointRespDTO> checkpoint(@PathVariable String jobCode) {
         return EnvelopeRespDTO.ok(queries.checkpoint(jobCode));
     }
@@ -103,8 +103,7 @@ public class IntegrationController {
     //                                                      失败 → 保留 key → 下次再点，带同一个 key → 后端 submit 查到 job_request_key 里有这行 → 直接返回原来那条 runId，不新建、不重跑。
 
 
-
-    @PostMapping("/jobs/{jobCode}/reset-incomplete-baseline") //
+    @PostMapping("/jobs/{jobCode}/reset-incomplete-baseline")  // 【重要】把「没建完的基线」重置掉，让下一次同步重新走全量
     public EnvelopeRespDTO<SyncCheckpointRespDTO> reset(@PathVariable String jobCode, @RequestBody ReasonReqDTO body, HttpServletRequest request) {
         access.requireMutation(request);
         jobs.resetIncomplete(jobCode, body.reason());
@@ -113,7 +112,8 @@ public class IntegrationController {
 
 
     @PostMapping("/job-runs/{id}/retry")
-    @ResponseStatus(HttpStatus.ACCEPTED) // 【重要】工补偿：重跑一条已经失败或被取消的任务。
+    @ResponseStatus(HttpStatus.ACCEPTED) // ③ 人工补偿：重跑一条已经失败或被取消的任务。
+    // 按 id 查原运行并校验状态，再用原 jobCode/mode 新建一条 RETRY 运行（parent_run_id 指向原 run）
     public EnvelopeRespDTO<JobRunRespDTO> retry(@PathVariable UUID id, @RequestHeader("Idempotency-Key") String requestId,
                                                 @RequestBody ReasonReqDTO body, HttpServletRequest request) {
         access.requireMutation(request);
@@ -126,13 +126,13 @@ public class IntegrationController {
         return EnvelopeRespDTO.ok(management.cancel(id));
     }
 
-    @GetMapping("/job-runs") // 【简单】查询SRM系统中的同步运行记录 job_run
+    @GetMapping("/job-runs") // ① 运行记录列表：前端在这里筛出 status=FAILED/CANCELLED 的行，拿到它的 runId
     public EnvelopeRespDTO<PageRespDTO<JobRunRespDTO>> runs(@RequestParam(defaultValue = "1") int page,
                                                             @RequestParam(defaultValue = "20") int size, @RequestParam(required = false) String jobCode) {
         return EnvelopeRespDTO.ok(queries.runs(page, size, jobCode));
     }
 
-    @GetMapping("/job-runs/{id}") // 【简单】查看同步运行记录的详情
+    @GetMapping("/job-runs/{id}") // ② 运行详情：用①的 runId 查单条；status 决定「失败补偿/重试」按钮是否显示
     public EnvelopeRespDTO<JobRunDetailRespDTO> detail(@PathVariable UUID id) {
         return EnvelopeRespDTO.ok(queries.detail(id));
     }
@@ -142,7 +142,7 @@ public class IntegrationController {
         return EnvelopeRespDTO.ok(queries.alerts(page, size));
     }
 
-    @PostMapping("/alerts/{id}/acknowledge") // 【简单】 把一条告警标记为「已读」—— 确认收到了，但问题没解决。
+    @PostMapping("/alerts/{id}/acknowledge") // 【简单】   把一条告警标记为「已读」—— 确认收到了，但问题没解决。
     public EnvelopeRespDTO<Void> acknowledge(@PathVariable long id, HttpServletRequest request) {
         access.requireMutation(request);
         alerts.acknowledge(id);
