@@ -60,17 +60,17 @@ public class SyncJobExecutor {
         while (capacity.tryAcquire()) {
             JobContext context = null;
             try {
-                context = jobs.claim(node);
+                context = jobs.claim(node); // 从数据库领取一条PENDING/待重试的任务
                 if (context == null) {
-                    capacity.release();
+                    capacity.release(); //没有任务归还许可，退出
                     return;
                 }
                 JobContext claimed = context;
-                workers.execute(() -> {
+                workers.execute(() -> { // 提交到 master-data-sync 线程池 提交就返回 不等执行完
                     try {
-                        coordinator.executeClaimed(claimed, RetryOwner.LOCAL);
+                        coordinator.executeClaimed(claimed, RetryOwner.LOCAL); // 提交到 master-data-sync 线程池
                     } finally {
-                        capacity.release();
+                        capacity.release(); // 跑完（成功或异常） -> 归还许可
                     }
                 });
             } catch (RuntimeException failure) {

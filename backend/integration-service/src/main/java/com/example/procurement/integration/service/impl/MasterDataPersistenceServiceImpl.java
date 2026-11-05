@@ -65,8 +65,8 @@ public class MasterDataPersistenceServiceImpl implements MasterDataPersistenceSe
     @Override
     public void establishSnapshot(JobContext context, SyncCheckpoint checkpoint, long count) {
         leases.fenced(context, () -> {
-            checkpoints.save(context.type().jobCode, codec.json(checkpoint), false);
-            runs.startBaseline(context.runId(), count);
+            checkpoints.save(context.type().jobCode, codec.json(checkpoint), false); // 将断点写进sync_checkpoint
+            runs.startBaseline(context.runId(), count); //  job_run 记【基线开始+总条数】
             return null;
         });
     }

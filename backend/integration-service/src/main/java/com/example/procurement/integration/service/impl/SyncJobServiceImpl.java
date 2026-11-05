@@ -138,7 +138,7 @@ public class SyncJobServiceImpl implements SyncJobService {
     @Override
     public JobContext claim(String owner) {
         return tx.execute(status -> {
-            for (ClaimableRunDTO run : runs.lockLocalCandidates()) {
+            for (ClaimableRunDTO run : runs.lockLocalCandidates()) { // 列出「本机可以领的任务job_definition  job_run 」候选，一条一条试着抢
                 JobContext context = claimRow(run, owner);
                 if (context != null) return context;
             }

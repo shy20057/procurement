@@ -10,9 +10,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /*
-* 这是真正暴露给 XXL-Job 调度中心的入口。@XxlJob("xxx") 注解的方法会被注册成
-* XXL-Job 的"执行器 Handler",调度中心配置任务时填写的 Handler 名就是这里的字符串。
-* */
+ * 这是真正暴露给 XXL-Job 调度中心的入口。@XxlJob("xxx") 注解的方法会被注册成
+ * XXL-Job 的"执行器 Handler",调度中心配置任务时填写的 Handler 名就是这里的字符串。
+ * */
 @Component
 public class XxlMasterDataJobHandlers {
     private final JobExecutionCoordinator coordinator;
@@ -20,7 +20,7 @@ public class XxlMasterDataJobHandlers {
     private final String executorAddress;
 
     public XxlMasterDataJobHandlers(JobExecutionCoordinator coordinator, XxlRuntimeContext runtime,
-            @Value("${xxl.job.executor.address:}") String executorAddress) {
+                                    @Value("${xxl.job.executor.address:}") String executorAddress) {
         this.coordinator = coordinator;
         this.runtime = runtime;
         this.executorAddress = executorAddress;
@@ -37,19 +37,23 @@ public class XxlMasterDataJobHandlers {
     }
 
     /*
-    * execute() 方法做了几件事:
-    * 用 XxlExecutionIdentity.from(...) 生成幂等身份;
-    * 组装 XxlTriggerMetadata;
-    * 调用 coordinator.executeFromXxl(...) 真正执行业务;
-    * 根据结果调用 runtime.success() / runtime.fail() 向调度中心报告。
-    * */
+     * execute() 方法做了几件事:
+     * 用 XxlExecutionIdentity.from(...) 生成幂等身份;
+     * 组装 XxlTriggerMetadata;
+     * 调用 coordinator.executeFromXxl(...) 真正执行业务;
+     * 根据结果调用 runtime.success() / runtime.fail() 向调度中心报告。
+     * */
     private void execute(String jobCode) {
         try {
+            // 生成幂等身份
             XxlExecutionIdentity identity = XxlExecutionIdentity.from(
                     jobCode, runtime.jobId(), runtime.jobLogFileName(), runtime.shardIndex());
+            // 组装触发元数据
             XxlTriggerMetadata metadata = new XxlTriggerMetadata(
                     runtime.jobId(), identity.logKey(), runtime.shardIndex(), runtime.shardTotal(), executorAddress);
+            // 真正执行
             JobExecutionResult result = coordinator.executeFromXxl(jobCode, metadata, identity.requestId());
+            // 回报结果
             runtime.log("SRM business runId=" + result.runId());
             if (result.success()) {
                 runtime.success("SRM业务运行成功 runId=" + result.runId());
@@ -63,8 +67,8 @@ public class XxlMasterDataJobHandlers {
     }
 
     /*
-    * safe() 方法把错误消息压缩成单行、截断到 300 字符,避免异常消息污染 XXL 日志。
-    * */
+     * safe() 方法把错误消息压缩成单行、截断到 300 字符,避免异常消息污染 XXL 日志。
+     * */
     private String safe(String message) {
         if (message == null || message.isBlank()) return "未提供错误摘要";
         String singleLine = message.replace('\r', ' ').replace('\n', ' ');

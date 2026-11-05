@@ -81,10 +81,10 @@ public class JobExecutionCoordinatorImpl implements JobExecutionCoordinator {
     * executeClaimed():把任务放进内存的 active 映射(用于心跳续租),调用 sync.execute() 执行真正的同步业务,然后 jobs.success() 或 jobs.failure() 落库。finally 里移除 active 并 leases.release() 释放租约。
     * */
     public JobExecutionResult executeClaimed(JobContext context, RetryOwner retryOwner) {
-        active.put(context.runId(), context);
+        active.put(context.runId(), context); //为了心跳续租
         try {
-            sync.execute(context);
-            jobs.success(context);
+            sync.execute(context); // 真正的业务
+            jobs.success(context); // 落成功状态
             return JobExecutionResult.succeeded(context.runId(), "业务运行完成");
         } catch (CancellationException cancelled) {
             jobs.cancelled(context);

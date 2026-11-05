@@ -6,12 +6,12 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 /*
-* XXL执行 执行幂等身份
-* 它根据 jobCode + jobId + jobLogFileName + shardIndex 生成一个全局唯一的身份:
-* logKey:对 XXL 的日志文件名做 SHA-256,得到 64 位十六进制串,作为"这次 XXL 调度"的唯一指纹;
-* requestId:拼接成 xxl:jobCode:jobId:logKey:shardIndex,作为幂等键。
-* 作用:XXL-Job 调度中心在任务失败后会重发同一个调度请求,通过这个身份可以识别出"这是不是同一次调度",避免重复执行。
-* */
+ * XXL执行 执行幂等身份
+ * 它根据 jobCode + jobId + jobLogFileName + shardIndex 生成一个全局唯一的身份:
+ * logKey:对 XXL 的日志文件名做 SHA-256,得到 64 位十六进制串,作为"这次 XXL 调度"的唯一指纹;
+ * requestId:拼接成 xxl:jobCode:jobId:logKey:shardIndex,作为幂等键。
+ * 作用:XXL-Job 调度中心在任务失败后会重发同一个调度请求,通过这个身份可以识别出"这是不是同一次调度",避免重复执行。
+ * */
 public record XxlExecutionIdentity(String logKey, String requestId) {
     public static XxlExecutionIdentity from(String jobCode, long jobId, String jobLogFileName, int shardIndex) {
         if (jobCode == null || jobCode.isBlank()) {

@@ -33,16 +33,16 @@ public class SyncLeaseServiceImpl implements SyncLeaseService {
     /** 栅栏令牌：即使旧实例暂停后恢复，也必须重新核验 owner、token、有效期。 */
     @Override
     public <T> T fenced(JobContext context, Supplier<T> operation) {
-        return tx.execute(status -> {
-            JobRunDO run = runs.lockRun(context.runId());
-            if (run == null || !context.ownerId().equals(run.getOwnerId())
+        return tx.execute(status -> { // 开启事务
+            JobRunDO run = runs.lockRun(context.runId()); // 锁jon_run行
+            if (run == null || !context.ownerId().equals(run.getOwnerId()) // 栅栏校验
                     || run.getFenceToken() == null || run.getFenceToken() != context.token()) throw lostLease();
             if ("CANCEL_REQUESTED".equals(run.getStatus())) throw new CancellationException("管理员请求取消");
             if (!"RUNNING".equals(run.getStatus())) throw lostLease();
-            Long token = leases.lockOwned(context.resourceKey(), context.ownerId(), context.token());
+            Long token = leases.lockOwned(context.resourceKey(), context.ownerId(), context.token()); // 锁job_lease行
             if (token == null) throw lostLease();
             // 这里的 Mapper 调用与 operation 中的写入共享同一事务绑定连接。
-            return operation.get();
+            return operation.get(); // 执行医药做的事情
         });
     }
 

@@ -20,26 +20,38 @@ public class MasterDataSyncServiceImpl implements MasterDataSyncService {
     private final MasterDataPersistenceService target;
     private final MasterDataCodec codec;
     private final SyncSettings settings;
+
     public MasterDataSyncServiceImpl(SapMasterDataClient source, MasterDataPersistenceService target,
-                                 MasterDataCodec codec, SyncSettings settings) {
-        this.source = source; this.target = target; this.codec = codec; this.settings = settings;
+                                     MasterDataCodec codec, SyncSettings settings) {
+        this.source = source;
+        this.target = target;
+        this.codec = codec;
+        this.settings = settings;
     }
+
     public void execute(JobContext context) {
-        if (!"AUTO".equals(context.mode())) { reconcile(context); return; }
-        SyncCheckpoint checkpoint = target.checkpoint(context.type());
-        if (!target.baselineComplete(context.type())) {
+        if (!"AUTO".equals(context.mode())) { // AUTO走增量，其余走对账
+            reconcile(context);
+            return;
+        }
+        SyncCheckpoint checkpoint = target.checkpoint(context.type()); // 检查点
+        if (!target.baselineComplete(context.type())) { // 校验这个任务基线完成了没有，没建完就先建基线流程
+            // 建快照
             if (checkpoint.snapshotId() == null) {
-                SnapshotRespDTO snapshot = source.snapshot(context.type());
-                context.type().position(snapshot.baselineCursor());
-                checkpoint = checkpoint.snapshot(snapshot);
-                target.establishSnapshot(context, checkpoint, snapshot.recordCount());
+                SnapshotRespDTO snapshot = source.snapshot(context.type()); // 源端建快照 HTTP调源端的snapshot接口 实现在源端建立快照
+                context.type().position(snapshot.baselineCursor()); // 校验锚点格式
+                checkpoint = checkpoint.snapshot(snapshot); // 内存切到快照模式
+                target.establishSnapshot(context, checkpoint, snapshot.recordCount()); // 落库
             }
             while (true) {
-                SourcePageRespDTO page = source.snapshotPage(context.type(), checkpoint.snapshotId(), checkpoint.snapshotPosition(), settings.pageSize);
+                SourcePageRespDTO page = source.snapshotPage(context.type(), checkpoint.snapshotId(), checkpoint.snapshotPosition(), settings.pageSize); // 调源端snapshotPage接口,翻页拉取数据，建立基线实现全量同步
                 validatePage(context, page);
                 long next;
-                try { next = Long.parseLong(page.nextCursor()); }
-                catch (NumberFormatException e) { throw new IntegrationProblem("INVALID_PAGE", "快照游标不是合法数字", false, 422); }
+                try {
+                    next = Long.parseLong(page.nextCursor());
+                } catch (NumberFormatException e) {
+                    throw new IntegrationProblem("INVALID_PAGE", "快照游标不是合法数字", false, 422);
+                }
                 codec.require(next >= checkpoint.snapshotPosition() && (!page.hasMore() || next > checkpoint.snapshotPosition()), "快照分页没有前进");
                 codec.require(checkpoint.baselineCursor().equals(page.upperCursor()), "源快照基准位置发生变化");
                 SyncCheckpoint updated = page.hasMore() ? checkpoint.snapshotPage(next) : checkpoint.baselineDone();
@@ -50,7 +62,7 @@ public class MasterDataSyncServiceImpl implements MasterDataSyncService {
         }
         // Fix a finite upper bound for this run; writes arriving later belong to the next run.
         while (true) {
-            SourcePageRespDTO page = source.changes(context.type(), checkpoint.sourceCursor(), checkpoint.upperCursor(), settings.pageSize);
+            SourcePageRespDTO page = source.changes(context.type(), checkpoint.sourceCursor(), checkpoint.upperCursor(), settings.pageSize); // 调源端changes接口,翻页拉取数据，进行增量同步
             validatePage(context, page);
             long before = context.type().position(checkpoint.sourceCursor());
             long next = context.type().position(page.nextCursor());
@@ -64,6 +76,7 @@ public class MasterDataSyncServiceImpl implements MasterDataSyncService {
             if (!page.hasMore()) break;
         }
     }
+
     private void reconcile(JobContext context) {
         SnapshotRespDTO snapshot = source.snapshot(context.type());
         target.startReconciliation(context, snapshot.recordCount());
@@ -72,8 +85,11 @@ public class MasterDataSyncServiceImpl implements MasterDataSyncService {
             SourcePageRespDTO page = source.snapshotPage(context.type(), snapshot.snapshotId(), position, settings.pageSize);
             validatePage(context, page);
             long next;
-            try { next = Long.parseLong(page.nextCursor()); }
-            catch (NumberFormatException e) { throw new IntegrationProblem("INVALID_PAGE", "对账快照游标不合法", false, 422); }
+            try {
+                next = Long.parseLong(page.nextCursor());
+            } catch (NumberFormatException e) {
+                throw new IntegrationProblem("INVALID_PAGE", "对账快照游标不合法", false, 422);
+            }
             codec.require(next >= position && (!page.hasMore() || next > position), "对账快照页没有前进");
             codec.require(snapshot.baselineCursor().equals(page.upperCursor()), "对账快照位置发生变化");
             target.reconcilePage(context, page.items(), Long.toString(position), page.nextCursor());
@@ -82,6 +98,7 @@ public class MasterDataSyncServiceImpl implements MasterDataSyncService {
         }
         target.finishReconciliation(context);
     }
+
     private void validatePage(JobContext context, SourcePageRespDTO page) {
         codec.require(page != null && page.items() != null && page.items().size() <= settings.pageSize, "源端没有遵守分页契约");
         codec.require(!page.hasMore() || !page.items().isEmpty(), "源端返回空页却声明仍有后续数据");
