@@ -47,7 +47,7 @@
       finished_at=clock_timestamp(),next_retry_at=null where run_id=#{runId} and status='PENDING'
   </update>
   <update id="markSuccess">
-    update integration_schema.job_run set status='SUCCEEDED',phase='COMPLETED',
+    update integration_schema.job_run set status='SUCCEEDED',phase=case when phase='NO_SAFE_WINDOW' then phase else 'COMPLETED' end,
       finished_at=clock_timestamp(),next_retry_at=null where run_id=#{runId}
   </update>
   <update id="markFailure">
@@ -90,4 +90,9 @@
   </update>
   <update id="updateTotal">update integration_schema.job_run set total_count=greatest(total_count,fetched_count+#{remaining}) where run_id=#{runId}</update>
   <update id="startReconciliation">update integration_schema.job_run set fetched_count=0,applied_count=0,ignored_count=0,total_count=#{count},phase='RECONCILE' where run_id=#{runId}</update>
+  <update id="saveScanContext">update integration_schema.job_run set scan_context=#{json} where run_id=#{runId}</update>
+  <update id="bindWindow">update integration_schema.job_run set window_id=#{windowId},target_watermark=#{end},
+    checkpoint_generation=#{generation},caught_up=false where run_id=#{runId}</update>
+  <update id="completeWindow">update integration_schema.job_run set caught_up=true,phase='WINDOW_COMPLETE' where run_id=#{runId}</update>
+  <update id="noSafeWindow">update integration_schema.job_run set caught_up=false,phase='NO_SAFE_WINDOW' where run_id=#{runId}</update>
 </mapper>

@@ -15,9 +15,12 @@ public class CostCenterRespDTO {
     private LocalDate validFrom;
     private LocalDate validTo;
     private Boolean blocked;
-    private Boolean deleted;
-    private Long sourceVersion;
-    private Instant sourceChangedAt;
+    private Boolean isDeleted;
+    private Boolean enabled;
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using=com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+    private Long sourceId;
+    private String sourceSystem;
+    private Instant sourceUpdatedAt;
     private String payloadHash;
     private Instant syncedAt;
 }

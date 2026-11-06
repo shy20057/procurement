@@ -13,6 +13,7 @@ import java.util.UUID;
 public interface SyncJobService {
     UUID submit(String jobCode, String mode, String requestId, String reason, String trigger, UUID parent);
     XxlSubmission submitXxl(String jobCode, XxlTriggerMetadata metadata, String requestId);
+    XxlSubmission submitXxl(String jobCode, String mode, XxlTriggerMetadata metadata, String requestId);
     JobContext claim(String owner);
     JobContext claim(UUID runId, String owner);
     void failPending(UUID runId, String code, String summary);

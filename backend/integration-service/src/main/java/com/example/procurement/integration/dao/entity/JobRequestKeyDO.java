@@ -10,4 +10,5 @@ public class JobRequestKeyDO {
     private UUID runId;
     private String jobCode;
     private String mode;
+    private String requestFingerprint;
 }

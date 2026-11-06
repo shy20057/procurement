@@ -51,7 +51,11 @@ public class JobExecutionCoordinatorImpl implements JobExecutionCoordinator {
     * executeFromXxl():先 submitXxl() 落库,然后根据返回状态处理——如果是重复/忙/停用,直接返回对应结果;否则 claim() 领取执行权,再走 executeClaimed()。
     * */
     public JobExecutionResult executeFromXxl(String jobCode, XxlTriggerMetadata metadata, String requestId) {
-        XxlSubmission submission = jobs.submitXxl(jobCode, metadata, requestId);
+        return executeFromXxl(jobCode,"AUTO",metadata,requestId);
+    }
+    @Override
+    public JobExecutionResult executeFromXxl(String jobCode, String mode, XxlTriggerMetadata metadata, String requestId) {
+        XxlSubmission submission = "AUTO".equals(mode)?jobs.submitXxl(jobCode, metadata, requestId):jobs.submitXxl(jobCode,mode,metadata,requestId);
         if (submission.state() == XxlSubmission.State.DUPLICATE_TERMINAL) {
             if ("SUCCEEDED".equals(submission.terminalStatus())) {
                 return JobExecutionResult.succeeded(submission.runId(), "幂等复用已成功的业务运行");
@@ -122,7 +126,10 @@ public class JobExecutionCoordinatorImpl implements JobExecutionCoordinator {
     private IntegrationProblem classify(Exception failure) {
         if (failure instanceof IntegrationProblem known) return known;
         if (failure instanceof DataAccessException) {
-            return new IntegrationProblem("DATABASE_ERROR", "本页数据库操作失败，已回滚", true, 503);
+            boolean permanent = failure instanceof org.springframework.dao.DataIntegrityViolationException
+                    || failure instanceof org.springframework.dao.InvalidDataAccessResourceUsageException;
+            return new IntegrationProblem(permanent ? "DATABASE_CONSTRAINT_ERROR" : "DATABASE_ERROR",
+                    "本页数据库操作失败，已回滚", !permanent, permanent ? 409 : 503);
         }
         return new IntegrationProblem("SYNC_INTERNAL_ERROR", "同步处理失败，请查看服务端日志", false, 500);
     }

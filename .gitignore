@@ -14,6 +14,7 @@
 
 # Local agent/runtime data
 .codex-runtime/
+artifacts/master-data-backups/
 
 # Maven
 **/target/

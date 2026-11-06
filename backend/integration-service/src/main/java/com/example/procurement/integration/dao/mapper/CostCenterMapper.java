@@ -6,7 +6,9 @@ import java.util.List;
 import org.apache.ibatis.annotations.Param;
 /** SQL 定义见 resources/mapper/integration/CostCenterMapper.xml。 */
 public interface CostCenterMapper {
+    long maxSourceId();
 List<CostCenterDO> selectByKeys(@Param("keys") List<String> keys);
+    List<CostCenterDO> selectByIds(@Param("ids") List<Long> ids);
     int batchUpsert(@Param("records") List<CostCenterDO> records, @Param("repair") boolean repair);
     long count(@Param("search") String search);
     List<CostCenterDO> selectPage(@Param("search") String search, @Param("size") int size, @Param("offset") long offset);

@@ -39,6 +39,11 @@ public class JobRunDO {
     private Long fenceToken;
     /** 执行阶段：BASELINE 建基线 / DELTA 拉增量 / RECONCILE 对账 / COMPLETED 完成 */
     private String phase;
+    private String scanContext;
+    private UUID windowId;
+    private Instant targetWatermark;
+    private Boolean caughtUp;
+    private Long checkpointGeneration;
     /** 已从源端取到的记录数 */
     private Long fetchedCount;
     /** 实际写入本地主数据的记录数 */

@@ -11,8 +11,17 @@ public class SyncDifferenceRespDTO {
     private UUID runId;
     private String businessKey;
     private String differenceType;
-    private Long sourceVersion;
-    private Long targetVersion;
+    @com.fasterxml.jackson.databind.annotation.JsonSerialize(using=com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+    private Long sourceId;
+    private Instant sourceUpdatedAt;
+    private Instant targetUpdatedAt;
+    private String sourceHash;
+    private String targetHash;
+    private String verificationStatus;
+    private String repairStatus;
+    private String detail;
+    private Instant verifiedAt;
+    private Instant repairedAt;
     private Boolean repaired;
     private Instant createdAt;
 }

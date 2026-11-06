@@ -1,14 +1,14 @@
 <template>
   <div class="sync-page">
     <header class="page-heading">
-      <div><span class="eyebrow">INTEGRATION / SAP MASTER DATA</span><h1>主数据同步中心</h1><p>让外围系统的每一次变化，都有进度、记录与回执。</p></div>
-      <div class="heading-actions"><span class="live-label"><i :class="{ busy: overview?.activeRunCount }" />{{ overview?.activeRunCount ? '任务运行中' : '手动刷新' }}</span><el-button @click="configureKey">管理密钥</el-button><el-button :loading="loading" @click="refresh">刷新看板</el-button></div>
+      <div><span class="eyebrow">INTEGRATION / SAP MASTER DATA</span><h1>主数据同步中心</h1><p>按固定窗口同步外围主数据的最新状态，记录完整水位与每页进度。</p></div>
+      <div class="heading-actions"><span class="live-label"><i :class="{ busy: overview?.activeRunCount }" />{{ overview?.activeRunCount ? '任务运行中' : '每 5 秒刷新' }}</span><el-button @click="configureKey">管理密钥</el-button><el-button :loading="loading" @click="refresh">刷新看板</el-button></div>
     </header>
 
     <el-alert v-if="loadFailed" class="connection-error" title="无法读取同步数据，请确认后端已重启、数据库迁移已完成，且网关已加载新的集成路由。" type="error" :closable="false" show-icon />
     <div class="metrics">
       <article><span>SRM 成本中心</span><strong>{{ overview?.costCenterCount ?? '—' }}<small>条</small></strong><p>已落库的业务主数据</p></article>
-      <article><span>有效期汇率记录</span><strong>{{ overview?.exchangeRateCount ?? '—' }}<small>条</small></strong><p>保留业务日期与源版本</p></article>
+      <article><span>有效期汇率记录</span><strong>{{ overview?.exchangeRateCount ?? '—' }}<small>条</small></strong><p>保留业务日期与源修改时间</p></article>
       <article :class="{ highlighted: overview?.activeRunCount }"><span>活动任务</span><strong>{{ overview?.activeRunCount ?? '—' }}<small>个</small></strong><p>包含排队、执行与等待重试</p></article>
       <article :class="{ warning: overview?.openAlertCount }"><span>未恢复告警</span><strong>{{ overview?.openAlertCount ?? '—' }}<small>条</small></strong><p>已读不等于故障恢复</p></article>
     </div>
@@ -18,15 +18,16 @@
       <div class="scheduler-meta"><el-tag :type="overview?.xxlEnabled ? 'success' : 'info'">{{ overview?.xxlEnabled ? '执行器已配置' : '执行器未启用' }}</el-tag><span>AppName：<code>{{ overview?.xxlExecutorAppName || '—' }}</code></span><el-button :disabled="!adminUrl" @click="openScheduler">打开 XXL-JOB 控制台</el-button></div>
     </section>
 
-    <section class="pipeline"><div><span class="step-number">01</span><strong>{{ overview?.mockEnabled ? 'SAP 模拟源' : 'SAP 外围接口' }}</strong><small>权威数据 · 完整快照 / 变更日志</small></div><span class="flow-arrow">→</span><div><span class="step-number">02</span><strong>SRM 主动分页拉取</strong><small>{{ overview?.pageSize ?? '—' }} 条 / 页 · 保存成功检查点</small></div><span class="flow-arrow">→</span><div><span class="step-number">03</span><strong>批量幂等写入</strong><small>{{ overview?.writeBatchSize ?? '—' }} 条 / SQL · 业务键 + 源版本</small></div><span class="flow-arrow">→</span><div><span class="step-number">04</span><strong>对账与异常恢复</strong><small>页级回滚 · 持久化重试 · 差异报告</small></div></section>
+    <section class="pipeline"><div><span class="step-number">01</span><strong>{{ overview?.mockEnabled ? 'SAP 模拟源' : 'SAP 外围接口' }}</strong><small>当前状态 · 源 ID + 微秒修改时间</small></div><span class="flow-arrow">→</span><div><span class="step-number">02</span><strong>固定时间窗口分页</strong><small>{{ overview?.pageSize ?? '—' }} 条 / 页 · 组合游标</small></div><span class="flow-arrow">→</span><div><span class="step-number">03</span><strong>批量幂等写入</strong><small>{{ overview?.writeBatchSize ?? '—' }} 条 / SQL · 源时间保护</small></div><span class="flow-arrow">→</span><div><span class="step-number">04</span><strong>对账与异常恢复</strong><small>页级回滚 · 持久化重试 · 差异复核</small></div></section>
+    <el-alert class="connection-error" :title="`安全延迟 ${overview?.settleDelaySeconds ?? 120} 秒 · 重叠回扫 ${overview?.overlapSeconds ?? 300} 秒`" description="刚保存的源端变化可能需等待所示安全延迟（默认约 2 分钟）进入安全窗口，再由同步任务拉取。完整水位只在整个窗口完成后推进；当前页游标仅代表窗口内进度。全量扫描和对账不是源端同一时点的快照。" type="info" :closable="false" show-icon />
 
     <div class="job-grid" v-loading="loading && !overview">
       <article v-for="job in overview?.jobs || []" :key="job.jobCode" class="job-card">
         <div class="job-top"><div class="job-title"><el-icon><component :is="job.entityType === 'COST_CENTER' ? OfficeBuilding : Money" /></el-icon><div><h2>{{ job.name }}</h2><span class="mono">{{ job.jobCode }}</span></div></div><el-tag :type="job.baselineComplete ? 'success' : 'info'" size="small">{{ job.baselineComplete ? '基线已建立' : '待首次全量' }}</el-tag></div>
-        <dl><div><dt>最近完整同步</dt><dd>{{ formatTime(job.lastSuccessAt) }}</dd></div><div><dt>执行计划</dt><dd><code>{{ job.cronExpression }}</code> · {{ job.zoneId }} <span v-if="!overview?.xxlEnabled">（XXL执行器未启用）</span></dd></div><div><dt>Handler</dt><dd><code>{{ job.handlerCode }}</code></dd></div><div><dt>资源租约</dt><dd><code>{{ job.resourceKey }}</code></dd></div></dl>
-        <div class="checkpoint"><span>已提交检查点 · v{{ job.checkpointVersion }}</span><code>{{ cursorLabel(job) }}</code></div>
+        <dl><div><dt>最近完整同步</dt><dd>{{ formatTime(job.lastSuccessAt) }}</dd></div><div><dt>安全窗口积压</dt><dd>{{ checkpointLag(checkpoint(job), overview?.settleDelaySeconds ?? 120) }}</dd></div><div><dt>执行计划</dt><dd><code>{{ job.cronExpression }}</code> · {{ job.zoneId }} <span v-if="!overview?.xxlEnabled">（XXL执行器未启用）</span></dd></div><div><dt>Handler</dt><dd><code>{{ job.handlerCode }}</code></dd></div><div><dt>资源租约</dt><dd><code>{{ job.resourceKey }}</code></dd></div></dl>
+        <div class="checkpoint checkpoint-grid"><span>检查点 v{{ job.checkpointVersion }} · 代次 {{ checkpoint(job)?.generation ?? '—' }}</span><code>TIME_WINDOW_V2</code><span>完整水位 W</span><code>{{ checkpoint(job)?.completedWatermark || '基线尚未完成' }}</code><span>活动窗口 [S, E)</span><code>{{ checkpoint(job)?.activeWindowId ? `[${checkpoint(job)?.windowStartAt}, ${checkpoint(job)?.windowEndAt})` : '无活动窗口' }}</code><span>窗口 ID</span><code>{{ checkpoint(job)?.activeWindowId || '—' }}</code><span>当前页位置</span><code>{{ checkpointCursor(checkpoint(job)) }}</code><span>基线锚点 / 固定 ID 上界</span><code>{{ checkpoint(job)?.baselineAnchorAt || '—' }} / {{ checkpoint(job)?.baselineMaxSourceId ?? '—' }}</code><span>已提交页数 / 最近成功页</span><code>{{ checkpoint(job)?.pageSequence ?? 0 }} / {{ checkpoint(job)?.lastPageAt || '—' }}</code><span>源时间高水位</span><code>{{ checkpoint(job)?.sourceTimeHighwater || '—' }}</code></div>
         <div class="job-bottom"><el-button type="primary" :loading="triggering === `${job.jobCode}:AUTO`" :disabled="!overview?.managementEnabled || isActiveRun(job.latestStatus)" @click="trigger(job, 'AUTO')">{{ job.baselineComplete ? '拉取增量' : '首次全量同步' }}</el-button><el-dropdown @command="(mode: RunMode) => trigger(job, mode)"><el-button :disabled="!overview?.managementEnabled || isActiveRun(job.latestStatus)">对账与修复<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="RECONCILE">只读全量对账</el-dropdown-item><el-dropdown-item command="REPAIR">对账并修复差异</el-dropdown-item></el-dropdown-menu></template></el-dropdown><el-button v-if="job.latestRunId" link type="primary" @click="selectedRun = job.latestRunId"><el-tag :type="statusTone(job.latestStatus)" size="small">{{ statusLabel(job.latestStatus) }}</el-tag><span class="detail-link">查看详情</span></el-button></div>
-        <div class="job-footer"><span>业务执行开关 <el-switch :model-value="job.enabled" size="small" :disabled="!overview?.managementEnabled" @change="(value: string | number | boolean) => toggleJob(job, Boolean(value))" /></span><small>Cron 启停请在 XXL-JOB Admin 操作</small><el-button v-if="!job.baselineComplete && job.latestStatus === 'FAILED'" link type="warning" @click="resetBaseline(job)">重建未完成基线</el-button></div>
+        <div class="job-footer"><span>业务执行开关 <el-switch :model-value="job.enabled" size="small" :disabled="!overview?.managementEnabled" @change="(value: string | number | boolean) => toggleJob(job, Boolean(value))" /></span><small>Cron 启停请在 XXL-JOB Admin 操作</small><el-button v-if="!job.baselineComplete && !isActiveRun(job.latestStatus)" :disabled="!overview?.managementEnabled" link type="warning" @click="resetBaseline(job)">重建未完成基线</el-button></div>
       </article>
     </div>
 
@@ -41,7 +42,7 @@
             <template v-else>
               <el-table-column prop="rateType" label="类型" width="70" /><el-table-column label="币种方向" width="140"><template #default="{ row }">{{ row.fromCurrency }} → {{ row.toCurrency }}</template></el-table-column><el-table-column prop="normalizedRate" label="规范化汇率（1单位原币）" min-width="190" /><el-table-column prop="effectiveDate" label="生效日" width="120" /><el-table-column prop="quotationMethod" label="报价方式" width="120" />
             </template>
-            <el-table-column prop="sourceVersion" label="源版本" width="85" /><el-table-column label="状态" width="100"><template #default="{ row }"><el-tag :type="row.deleted ? 'danger' : row.blocked ? 'warning' : 'success'" size="small">{{ row.deleted ? '已停用' : row.blocked ? '已冻结' : '可用' }}</el-tag></template></el-table-column><el-table-column label="同步时间" width="185"><template #default="{ row }">{{ formatTime(row.syncedAt) }}</template></el-table-column>
+            <el-table-column prop="sourceId" label="源记录 ID" min-width="150" /><el-table-column prop="sourceUpdatedAt" label="源修改时间（UTC · 微秒）" min-width="250" /><el-table-column label="独立业务状态" min-width="200"><template #default="{ row }"><div class="state-tags"><el-tag :type="row.blocked ? 'warning' : 'info'" size="small">{{ row.blocked ? '冻结' : '未冻结' }}</el-tag><el-tag :type="row.enabled ? 'success' : 'warning'" size="small">{{ row.enabled ? '启用' : '禁用' }}</el-tag><el-tag :type="row.isDeleted ? 'danger' : 'info'" size="small">{{ row.isDeleted ? '逻辑删除' : '未删除' }}</el-tag></div></template></el-table-column><el-table-column label="同步时间" width="185"><template #default="{ row }">{{ formatTime(row.syncedAt) }}</template></el-table-column>
             <template #empty><el-empty description="尚无同步数据，请先执行首次全量同步。" :image-size="90" /></template>
           </el-table>
           <el-pagination class="pagination" v-model:current-page="dataPage" :page-size="20" :total="dataTotal" layout="total, prev, pager, next" @current-change="loadRecords" />
@@ -56,10 +57,10 @@
           <el-table :data="alerts" v-loading="tableLoading" stripe><el-table-column prop="category" label="类别" width="160" /><el-table-column prop="summary" label="摘要" min-width="290" /><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.status === 'RESOLVED' ? 'success' : row.status === 'OPEN' ? 'danger' : 'warning'" size="small">{{ row.status === 'RESOLVED' ? '已恢复' : row.status === 'OPEN' ? '待处理' : '已读未恢复' }}</el-tag></template></el-table-column><el-table-column prop="occurrenceCount" label="累计次数" width="90" /><el-table-column label="最近发现" width="185"><template #default="{ row }">{{ formatTime(row.lastSeenAt) }}</template></el-table-column><el-table-column label="操作" width="150"><template #default="{ row }"><el-button v-if="row.runId" link type="primary" @click="selectedRun = row.runId">关联运行</el-button><el-button v-if="row.status === 'OPEN'" link :disabled="!overview?.managementEnabled" @click="acknowledge(row.id)">已读</el-button></template></el-table-column></el-table>
           <el-pagination class="pagination" v-model:current-page="alertPage" :page-size="20" :total="alertTotal" layout="total, prev, pager, next" @current-change="loadAlerts" />
         </el-tab-pane>
-        <el-tab-pane v-if="overview?.mockEnabled" label="SAP 源端模拟（开发）" name="source"><MockSapPanel v-if="tab === 'source'" :can-manage="!!overview?.managementEnabled" @changed="refreshOverview" /></el-tab-pane>
+        <el-tab-pane v-if="overview?.mockEnabled" label="SAP 源端模拟（开发）" name="source"><MockSapPanel v-if="tab === 'source'" :can-manage="!!overview?.managementEnabled" :settle-delay-seconds="overview?.settleDelaySeconds ?? 120" :overlap-seconds="overview?.overlapSeconds ?? 300" @changed="refreshOverview" /></el-tab-pane>
       </el-tabs>
     </section>
-    <footer class="page-footnote">{{ overview?.mockEnabled ? '当前为本地 SAP 模拟环境' : '当前使用配置的外围数据接口' }} · 当前实现 SOURCE_CURSOR 模式 · CDC / Canal 留待后续练习</footer>
+    <footer class="page-footnote">{{ overview?.mockEnabled ? '当前为本地 SAP 模拟环境' : '当前使用配置的外围数据接口' }} · TIME_WINDOW_V2 · 当前状态最终收敛 · 超出延迟边界由全量对账兜底</footer>
     <RunDetailDrawer :run-id="selectedRun" :can-manage="!!overview?.managementEnabled" @close="selectedRun = null" @changed="refresh" />
   </div>
 </template>
@@ -69,11 +70,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, OfficeBuilding, Money, ArrowDown } from '@element-plus/icons-vue'
 import { integrationApi } from '@/api/integration'
-import type { Overview, JobDefinition, DataType, RunMode, TargetRecord, SyncRun, SyncAlert } from '@/types/integration'
+import type { Overview, JobDefinition, DataType, RunMode, TargetRecord, SyncRun, SyncAlert, SyncCheckpoint } from '@/types/integration'
 import { formatTime, statusLabel, statusTone, modeLabel, isActiveRun } from '@/types/integration'
 import { safeXxlAdminUrl } from '@/utils/xxlJobDisplay'
 import MockSapPanel from './MockSapPanel.vue'
 import RunDetailDrawer from './RunDetailDrawer.vue'
+import { parseCheckpoint, checkpointCursor, checkpointLag } from './checkpointDisplay'
 
 const overview = ref<Overview | null>(null), loading = ref(false), loadFailed = ref(false), tableLoading = ref(false)
 const tab = ref('data'), dataType = ref<DataType>('COST_CENTER'), keyword = ref('')
@@ -81,19 +83,28 @@ const records = ref<TargetRecord[]>([]), dataPage = ref(1), dataTotal = ref(0)
 const runs = ref<SyncRun[]>([]), runPage = ref(1), runTotal = ref(0)
 const alerts = ref<SyncAlert[]>([]), alertPage = ref(1), alertTotal = ref(0)
 const selectedRun = ref<string | null>(null), triggering = ref<string | null>(null)
-const requestKeys = new Map<string, string>()
+const pendingRequests = new Map<string, { key: string; reason: string }>()
 const adminUrl = computed(() => safeXxlAdminUrl(overview.value?.xxlAdminUrl))
 let disposed = false
 let dataGeneration = 0
+let overviewGeneration = 0
+let timer: ReturnType<typeof setInterval> | undefined
+const checkpoints = ref<Record<string, SyncCheckpoint>>({})
 
-function cursorLabel(job: JobDefinition) {
-  if (!job.committedCursor) return '尚未建立检查点'
-  try {
-    const state = JSON.parse(job.committedCursor)
-    return state.snapshotId ? `首次全量 · 已处理 ${state.snapshotPosition} 条` : state.sourceCursor || '等待源端游标'
-  } catch { return job.committedCursor }
+function checkpoint(job: JobDefinition) {
+  return checkpoints.value[job.jobCode] ?? parseCheckpoint(job.committedCursor)
 }
-async function refreshOverview() { const data = await integrationApi.overview(); if (!disposed) overview.value = data }
+async function refreshOverview() {
+  const generation = ++overviewGeneration
+  const data = await integrationApi.overview()
+  if (disposed || generation !== overviewGeneration) return
+  overview.value = data
+  const results = await Promise.allSettled(data.jobs.map(job => integrationApi.checkpoint(job.jobCode)))
+  if (disposed || generation !== overviewGeneration) return
+  const next: Record<string, SyncCheckpoint> = {}
+  results.forEach((result, index) => { const job = data.jobs[index]; if (job && result.status === 'fulfilled') next[job.jobCode] = result.value })
+  checkpoints.value = next
+}
 async function loadRecords() {
   const generation = ++dataGeneration
   const result = await integrationApi.records(dataType.value, dataPage.value, keyword.value)
@@ -119,21 +130,28 @@ function searchRecords() { dataPage.value = 1; changeTab() }
 function openScheduler() { if (adminUrl.value) window.open(adminUrl.value, '_blank', 'noopener,noreferrer') }
 async function trigger(job: JobDefinition, mode: RunMode) {
   if (triggering.value) return
-  let reason = mode === 'AUTO' ? '同步中心手动触发' : '同步中心手动只读对账'
-  if (mode === 'REPAIR') {
-    try {
-      const result = await ElMessageBox.prompt('将以源端快照补齐缺失或修复相同/较旧版本，不覆盖本地较新版本，也不删除源端缺失记录。请输入原因：', '对账并修复', { inputValidator: value => !!value?.trim() || '请填写原因', type: 'warning' })
-      reason = result.value
-    } catch { return }
-  }
   const action = `${job.jobCode}:${mode}`
   triggering.value = action
-  const key = requestKeys.get(action) || crypto.randomUUID()
-  requestKeys.set(action, key)
   try {
-    const run = await integrationApi.trigger(job.jobCode, mode, reason, key)
-    requestKeys.delete(action); selectedRun.value = run.runId; ElMessage.success('任务已提交，可在详情中查看真实进度'); await refresh()
-  } catch { /* Retain the same idempotency key when the request result is unknown. */ }
+    let pending = pendingRequests.get(action)
+    if (!pending) {
+      let reason = mode === 'AUTO' ? '同步中心手动触发' : '同步中心手动只读对账'
+      if (mode === 'REPAIR') {
+        const result = await ElMessageBox.prompt('将全量扫描并逐条复核最新源值。请输入修复原因。', '对账并修复', { inputValidator: value => !!value?.trim() || '请填写原因', type: 'warning' })
+        reason = result.value
+      }
+      pending = { key: crypto.randomUUID(), reason }
+      pendingRequests.set(action, pending)
+    }
+    const run = await integrationApi.trigger(job.jobCode, mode, pending.reason, pending.key)
+    pendingRequests.delete(action)
+    selectedRun.value = run.runId
+    ElMessage.success('任务已提交，可在详情中查看真实进度')
+    await refresh()
+  } catch (error) {
+    const status = (error as { response?: { status?: number } } | null)?.response?.status
+    if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) pendingRequests.delete(action)
+  }
   finally { triggering.value = null }
 }
 async function toggleJob(job: JobDefinition, enabled: boolean) {
@@ -141,7 +159,7 @@ async function toggleJob(job: JobDefinition, enabled: boolean) {
 }
 async function resetBaseline(job: JobDefinition) {
   try {
-    const { value } = await ElMessageBox.prompt('仅重建未完成的源快照，不删除已落库记录。请先取消等待重试的任务，并填写原因。', '重建未完成基线', { inputValidator: value => !!value?.trim() || '请填写原因' })
+    const { value } = await ElMessageBox.prompt('将为未完成基线建立新的扫描锚点和固定 ID 上界，并提升代次；保留已落库记录。请先结束活动或等待重试的运行，并填写原因。', '重建未完成基线', { inputValidator: value => !!value?.trim() || '请填写原因' })
     await integrationApi.resetBaseline(job.jobCode, value); await refresh(); ElMessage.success('未完成基线已重置，请执行首次全量同步')
   } catch { /* Dialog cancellation or backend rejection. */ }
 }
@@ -149,10 +167,11 @@ async function acknowledge(id: number) { try { await integrationApi.acknowledge(
 async function configureKey() {
   try { const { value } = await ElMessageBox.prompt('仅当后端配置了 INTEGRATION_ADMIN_KEY 时需要填写。密钥只保存在当前浏览器会话；留空清除。', '集成管理密钥', { inputType: 'password' }); if (value) sessionStorage.setItem('integration-admin-key', value); else sessionStorage.removeItem('integration-admin-key'); ElMessage.success('会话配置已保存') } catch { /* Dialog cancellation. */ }
 }
-onMounted(() => { void refresh() })
-onUnmounted(() => { disposed = true; dataGeneration++ })
+onMounted(() => { void refresh(); timer = setInterval(() => { if (!document.hidden && tab.value !== 'source') void refresh() }, 5000) })
+onUnmounted(() => { disposed = true; dataGeneration++; overviewGeneration++; if (timer) clearInterval(timer) })
 </script>
 
 <style scoped>
+.checkpoint.checkpoint-grid{display:grid;grid-template-columns:minmax(110px,auto) minmax(0,1fr);align-items:start}.state-tags{display:flex;gap:4px;flex-wrap:wrap}
 .sync-page{padding:28px 30px 22px;max-width:1800px;margin:auto}.page-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:24px}.eyebrow{font:11px var(--mono);letter-spacing:.13em;color:var(--whale)}h1{font-size:27px;margin:7px 0 5px;letter-spacing:-.7px}.page-heading p{color:var(--memo);font-size:13px;margin:0}.heading-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.live-label{font-size:12px;color:var(--memo);display:flex;align-items:center;gap:7px;margin-right:5px}.live-label i{width:7px;height:7px;border-radius:50%;background:#22a975}.live-label i.busy{background:var(--whale);box-shadow:0 0 0 4px #eef2ff}.connection-error{margin-bottom:20px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}.metrics article{background:white;border:1px solid var(--rule);border-radius:12px;padding:20px 22px}.metrics article>span{font-size:12px;color:var(--memo)}.metrics strong{font:600 34px var(--mono);display:block;margin:8px 0;color:var(--ink)}.metrics small{font:12px var(--sans);color:var(--memo);margin-left:8px}.metrics p{font-size:11px;color:var(--memo);margin:0}.metrics .highlighted{background:var(--grad-card-blue)}.metrics .warning strong{color:#d97706}.scheduler-panel{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 22px;margin-bottom:20px;border:1px solid #cad8f6;border-radius:12px;background:linear-gradient(135deg,#f8fbff,#eef4ff)}.scheduler-panel h2{font-size:17px;margin:5px 0}.scheduler-panel p{font-size:12px;color:var(--memo);margin:0}.scheduler-meta{display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap;font-size:12px}.scheduler-meta code{color:var(--whale)}.pipeline{background:var(--grad-mist);border:1px solid var(--rule);border-radius:12px;padding:21px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px}.pipeline>div{display:grid;grid-template-columns:30px 1fr;gap:5px 9px}.step-number{grid-row:span 2;font:12px var(--mono);color:var(--whale);background:#e3ebff;border-radius:7px;width:29px;height:29px;display:grid;place-items:center}.pipeline strong{font-size:12px}.pipeline small{font-size:11px;color:var(--memo)}.flow-arrow{color:#a3b2d2;font-size:22px}.job-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:22px;min-height:80px}.job-card{border:1px solid var(--rule);background:white;border-radius:12px;overflow:hidden;padding:23px 23px 12px}.job-top{display:flex;align-items:center;justify-content:space-between;gap:12px}.job-title{display:flex;align-items:center;gap:12px}.job-title>.el-icon{width:43px;height:43px;background:var(--whale-light);border-radius:10px;font-size:21px;color:var(--whale)}.job-title h2{font-size:17px;margin:0 0 3px}.job-title .mono{font-size:10px;color:var(--memo)}dl{display:grid;gap:9px;margin:20px 0;font-size:12px}dl>div{display:flex;gap:22px}dt{color:var(--memo);min-width:82px}dd{margin:0;overflow-wrap:anywhere}.checkpoint{padding:10px 13px;border:1px dashed #d7e1f8;background:#f9fbff;border-radius:7px;display:flex;justify-content:space-between;gap:12px;font-size:11px;color:var(--memo);margin-bottom:18px}.checkpoint code{color:var(--whale);overflow-wrap:anywhere}.job-bottom{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.detail-link{font-size:11px;margin-left:7px}.job-footer{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #edf1fa;margin-top:17px;padding-top:11px;color:var(--memo);font-size:11px;gap:10px;flex-wrap:wrap}.job-footer>span{display:flex;align-items:center;gap:10px}.workspace{background:white;border:1px solid var(--rule);border-radius:12px;padding:8px 22px 20px}.table-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:12px 0 20px;flex-wrap:wrap}.table-hint{font-size:12px;color:var(--memo);margin:8px 0 18px}.pagination{display:flex;justify-content:flex-end;margin-top:18px}.page-footnote{font-size:11px;color:#8290aa;text-align:center;margin-top:20px}.workspace :deep(.el-tabs__item){height:52px;font-size:13px}.workspace :deep(.el-table){font-size:12px}@media(max-width:1250px){.pipeline small{display:none}.pipeline>div{align-items:center}.step-number{grid-row:auto}.topbar-wordmark{display:none}}@media(max-width:1050px){.job-grid{grid-template-columns:1fr}.metrics{grid-template-columns:repeat(2,1fr)}.page-heading,.scheduler-panel{align-items:flex-start;flex-direction:column}.scheduler-meta{justify-content:flex-start}.pipeline{flex-wrap:wrap}.flow-arrow{display:none}.sync-page{padding:20px 16px}.pipeline>div{min-width:40%}}
 </style>

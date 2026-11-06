@@ -1,27 +1,68 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.example.procurement.integration.dao.mapper.SyncReconciliationMapper">
-<delete id="deleteSeen">delete from integration_schema.sync_reconciliation_seen where run_id=#{runId}</delete>
+  <delete id="deleteSeen">delete from integration_schema.sync_reconciliation_seen where run_id=#{runId}</delete>
   <delete id="deleteDifferences">delete from integration_schema.sync_reconciliation_diff where run_id=#{runId}</delete>
-  <insert id="insertSeen">insert into integration_schema.sync_reconciliation_seen(run_id,business_key) values (#{runId},#{businessKey}) on conflict do nothing</insert>
-  <insert id="insertDifference">
-    insert into integration_schema.sync_reconciliation_diff(run_id,business_key,difference_type,source_version,target_version,repaired)
-    values (#{runId},#{businessKey},#{differenceType},#{sourceVersion},#{targetVersion},#{repaired}) on conflict(run_id,business_key) do nothing
+  <insert id="insertSeen">
+    insert into integration_schema.sync_reconciliation_seen(run_id,source_id,business_key,source_updated_at,source_hash)
+    values(#{runId},#{sourceId},#{businessKey},#{updatedAt},#{hash})
+    on conflict(run_id,source_id) do update set source_updated_at=excluded.source_updated_at,
+      source_hash=excluded.source_hash,observed_at=clock_timestamp()
   </insert>
-  <sql id="targetKey"><choose>
-    <when test="type == 'COST_CENTER'">t.controlling_area||'|'||t.cost_center_code</when>
-    <otherwise>t.rate_type||'|'||t.from_currency||'|'||t.to_currency||'|'||t.effective_date::text</otherwise>
-  </choose></sql>
-  <insert id="insertMissingSource">
-    insert into integration_schema.sync_reconciliation_diff(run_id,business_key,difference_type,target_version)
-    select #{runId},<include refid="targetKey"/>,'MISSING_SOURCE',source_version from
-    <choose><when test="type == 'COST_CENTER'">integration_schema.cost_center</when>
-      <otherwise>integration_schema.exchange_rate</otherwise></choose> t
-    where not exists(select 1 from integration_schema.sync_reconciliation_seen s
-      where s.run_id=#{runId} and s.business_key=<include refid="targetKey"/>)
+  <insert id="insertDifference">
+    insert into integration_schema.sync_reconciliation_diff(run_id,business_key,source_id,difference_type,
+      source_updated_at,target_updated_at,source_hash,target_hash,repaired,verification_status,repair_status,detail)
+    values(#{runId},#{businessKey},#{sourceId},#{differenceType},#{sourceUpdatedAt},#{targetUpdatedAt},
+      #{sourceHash},#{targetHash},false,'OBSERVED','NOT_REQUESTED',#{detail})
     on conflict(run_id,business_key) do nothing
   </insert>
+  <update id="updateDifference">
+    update integration_schema.sync_reconciliation_diff set difference_type=#{differenceType},
+      source_updated_at=#{sourceUpdatedAt},target_updated_at=#{targetUpdatedAt},
+      source_hash=#{sourceHash},target_hash=#{targetHash},verification_status=#{verificationStatus},
+      repair_status=#{repairStatus},repaired=#{repaired},detail=#{detail},
+      verified_at=clock_timestamp(),
+      repaired_at=case when #{repaired} then clock_timestamp() else repaired_at end where id=#{id} and run_id=#{runId}
+  </update>
+  <select id="firstAbsence" resultType="java.time.Instant">
+    select min(d.verified_at) from integration_schema.sync_reconciliation_diff d
+    join integration_schema.job_run r on r.run_id=d.run_id
+    where r.job_code=#{jobCode} and d.source_id=#{sourceId} and d.difference_type='MISSING_SOURCE'
+      and d.verification_status in ('OBSERVED','CONFIRMED')
+      and d.verified_at&gt;coalesce((
+        select max(s.observed_at) from integration_schema.sync_reconciliation_seen s
+        join integration_schema.job_run seen_run on seen_run.run_id=s.run_id
+        where seen_run.job_code=#{jobCode} and s.source_id=#{sourceId}
+      ),to_timestamp(0))
+  </select>
+  <select id="databaseNow" resultType="java.time.Instant">select clock_timestamp()</select>
+  <select id="idsWithAbsence" resultType="long">
+    select distinct d.source_id from integration_schema.sync_reconciliation_diff d
+    join integration_schema.job_run r on r.run_id=d.run_id
+    where r.job_code=#{jobCode} and d.difference_type='MISSING_SOURCE'
+      and d.verification_status in ('OBSERVED','CONFIRMED') and d.verified_at is not null
+      and d.source_id in
+    <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+  </select>
+  <select id="missingIds" resultType="long">
+    select t.source_id from
+    <choose><when test="type == 'COST_CENTER'">integration_schema.cost_center</when>
+      <otherwise>integration_schema.exchange_rate</otherwise></choose> t
+    where t.source_system='SAP' and t.source_id&gt;#{afterId} and t.source_id&lt;=#{maxId}
+      and not exists(select 1 from integration_schema.sync_reconciliation_seen s
+        where s.run_id=#{runId} and s.source_id=t.source_id)
+    order by t.source_id limit #{limit}
+  </select>
+  <select id="pendingDifferences" resultType="com.example.procurement.integration.dao.entity.SyncDifferenceDO">
+    select * from integration_schema.sync_reconciliation_diff where run_id=#{runId} and id&gt;#{afterId}
+      and verification_status='OBSERVED' order by id limit #{limit}
+  </select>
   <select id="countDifferences" resultType="long">select count(*) from integration_schema.sync_reconciliation_diff where run_id=#{runId}</select>
-  <select id="countUnrepaired" resultType="long">select count(*) from integration_schema.sync_reconciliation_diff where run_id=#{runId} and repaired=false</select>
-  <select id="selectDifferences" resultType="com.example.procurement.integration.dao.entity.SyncDifferenceDO">select * from integration_schema.sync_reconciliation_diff where run_id=#{runId} order by id limit 100</select>
+  <select id="countUnrepaired" resultType="long">
+    select count(*) from integration_schema.sync_reconciliation_diff where run_id=#{runId} and repaired=false
+      and verification_status&lt;&gt;'RESOLVED_BY_RECHECK'
+  </select>
+  <select id="selectDifferences" resultType="com.example.procurement.integration.dao.entity.SyncDifferenceDO">
+    select * from integration_schema.sync_reconciliation_diff where run_id=#{runId} order by id limit 100
+  </select>
 </mapper>

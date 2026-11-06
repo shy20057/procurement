@@ -39,7 +39,7 @@ public class MasterDataCodec {
             BigDecimal stored = record.exchangeRate().normalizedRate();
             data = new ExchangeRateDTO(clean.rateType(), clean.fromCurrency(), clean.toCurrency(), clean.effectiveDate(),
                     clean.rawRate(), clean.fromFactor(), clean.toFactor(), clean.quotationMethod(),
-                    stored == null ? null : stored.setScale(12, RoundingMode.UNNECESSARY), clean.deleted());
+                    stored == null ? null : stored.setScale(12, RoundingMode.UNNECESSARY), clean.blocked(), clean.enabled(), clean.isDeleted());
         }
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -74,16 +74,16 @@ public class MasterDataCodec {
         decimal(normalized, 28, 12);
         return new ExchangeRateDTO(value.rateType(), value.fromCurrency(), value.toCurrency(),
                 value.effectiveDate(), value.rawRate().stripTrailingZeros(), value.fromFactor().stripTrailingZeros(),
-                value.toFactor().stripTrailingZeros(), value.quotationMethod(), normalized, value.deleted());
+                value.toFactor().stripTrailingZeros(), value.quotationMethod(), normalized, value.blocked(), value.enabled(), value.isDeleted());
     }
-    public String businessKey(CostCenterDTO value) { return value.controllingArea() + "|" + value.costCenterCode(); }
+    public String businessKey(CostCenterDTO value) { return json(java.util.List.of(value.controllingArea(), value.costCenterCode())); }
     public String businessKey(ExchangeRateDTO value) {
-        return value.rateType() + "|" + value.fromCurrency() + "|" + value.toCurrency() + "|" + value.effectiveDate();
+        return json(java.util.List.of(value.rateType(), value.fromCurrency(), value.toCurrency(), value.effectiveDate().toString()));
     }
     public void validate(SourceRecordDTO record, MasterDataType type) {
         require(record != null && record.entityType() == type, "源记录类型不匹配");
-        require(record.sourceVersion() > 0 && record.changedAt() != null
-                && !record.changedAt().isAfter(Instant.now().plusSeconds(300)), "源版本或变更时间不合法");
+        require(record.sourceId() > 0 && record.updatedAt() != null
+                && !record.updatedAt().isAfter(Instant.now().plusSeconds(300)), "源ID或修改时间不合法");
         String expected;
         if (type == MasterDataType.COST_CENTER) {
             expected = businessKey(validate(record.costCenter()));

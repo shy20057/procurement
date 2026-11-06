@@ -20,6 +20,11 @@ public class JobRunRespDTO {
     private String ownerId;
     private Long fenceToken;
     private String phase;
+    private String scanContext;
+    private UUID windowId;
+    private Instant targetWatermark;
+    private Boolean caughtUp;
+    private Long checkpointGeneration;
     private Long fetchedCount;
     private Long appliedCount;
     private Long ignoredCount;

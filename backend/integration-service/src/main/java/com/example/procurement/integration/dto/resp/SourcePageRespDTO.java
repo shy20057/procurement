@@ -4,6 +4,7 @@ import com.example.procurement.integration.dto.domain.SourceRecordDTO;
 
 import java.util.List;
 
-public record SourcePageRespDTO(List<SourceRecordDTO> items, String nextCursor,
-                                String upperCursor, boolean hasMore) {
+public record SourcePageRespDTO(List<SourceRecordDTO> items,
+                                com.example.procurement.integration.dto.domain.SourceCursorDTO nextCursor,
+                                boolean hasMore) {
 }

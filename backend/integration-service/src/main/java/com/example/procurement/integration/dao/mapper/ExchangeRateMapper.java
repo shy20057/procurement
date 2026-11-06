@@ -7,7 +7,9 @@ import java.time.LocalDate;
 import org.apache.ibatis.annotations.Param;
 /** SQL 定义见 resources/mapper/integration/ExchangeRateMapper.xml。 */
 public interface ExchangeRateMapper {
+    long maxSourceId();
 List<ExchangeRateDO> selectByKeys(@Param("keys") List<String> keys);
+    List<ExchangeRateDO> selectByIds(@Param("ids") List<Long> ids);
     int batchUpsert(@Param("records") List<ExchangeRateDO> records, @Param("repair") boolean repair);
     long count(@Param("search") String search);
     List<ExchangeRateDO> selectPage(@Param("search") String search, @Param("size") int size, @Param("offset") long offset);

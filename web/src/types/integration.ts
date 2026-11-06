@@ -14,22 +14,33 @@ export interface Overview {
   jobs: JobDefinition[]; mockEnabled: boolean; managementEnabled: boolean
   schedulerProvider: 'XXL_JOB'; xxlEnabled: boolean; xxlAdminUrl: string | null; xxlExecutorAppName: string
   emailEnabled: boolean; pageSize: number; writeBatchSize: number
+  settleDelaySeconds: number; overlapSeconds: number
 }
 export interface CostCenter {
   controllingArea: string; costCenterCode: string; companyCode: string; name: string
-  validFrom: string; validTo: string; blocked: boolean; deleted: boolean
+  validFrom: string; validTo: string; blocked: boolean; enabled: boolean; isDeleted: boolean
 }
 export interface ExchangeRate {
   rateType: string; fromCurrency: string; toCurrency: string; effectiveDate: string
   rawRate: string | number; fromFactor: string | number; toFactor: string | number
-  quotationMethod: 'DIRECT' | 'INDIRECT'; normalizedRate: string | number | null; deleted: boolean
+  quotationMethod: 'DIRECT' | 'INDIRECT'; normalizedRate: string | number | null
+  blocked: boolean; enabled: boolean; isDeleted: boolean
 }
 export interface SourceRecord {
-  entityType: DataType; businessKey: string; sourceVersion: number; changedAt: string
+  entityType: DataType; businessKey: string; sourceId: string; updatedAt: string
   costCenter: CostCenter | null; exchangeRate: ExchangeRate | null
 }
 export type TargetRecord = Partial<CostCenter & ExchangeRate> & {
-  id: number; sourceVersion: number; sourceChangedAt: string; syncedAt: string
+  id: string; sourceId: string; sourceUpdatedAt: string; syncedAt: string
+}
+export interface SourceSaveRequest<T> { data: T; sourceId?: string | null; expectedUpdatedAt?: string | null }
+export interface SourceCursor { updatedAt: string; sourceId: string }
+export interface SyncCheckpoint {
+  mode: 'TIME_WINDOW_V2'; generation: number; baselineComplete: boolean
+  baselineAnchorAt: string | null; baselineMaxSourceId: string; baselineLastSourceId: string
+  completedWatermark: string | null; activeWindowId: string | null
+  windowStartAt: string | null; windowEndAt: string | null; pageCursor: SourceCursor | null
+  sourceTimeHighwater: string | null; lastPageAt: string | null; pageSequence: number
 }
 export interface SyncRun {
   runId: string; jobCode: string; mode: RunMode; status: RunStatus; triggerType: string
@@ -38,13 +49,18 @@ export interface SyncRun {
   createdAt: string; startedAt: string | null; finishedAt: string | null; nextRetryAt: string | null
   xxlJobId?: number | null; xxlLogKey?: string | null; xxlShardIndex?: number | null
   xxlShardTotal?: number | null; executorAddress?: string | null
+  caughtUp: boolean; scanContext: string | null; windowId: string | null; targetWatermark: string | null
 }
 export interface PageAudit {
   pageNo: number; phase: string; fromCursor: string; toCursor: string
   fetchedCount: number; appliedCount: number; ignoredCount: number; committedAt: string
 }
 export interface Failure { attemptNo: number; errorCode: string; errorSummary: string; occurredAt: string; fromCursor: string }
-export interface Difference { businessKey: string; differenceType: string; sourceVersion: number | null; targetVersion: number | null; repaired: boolean }
+export interface Difference {
+  businessKey: string; differenceType: string; sourceId: string | null
+  sourceUpdatedAt: string | null; targetUpdatedAt: string | null; repaired: boolean
+  verificationStatus: string; repairStatus: string; detail: string | null
+}
 export interface RunDetail extends SyncRun { pages: PageAudit[]; failures: Failure[]; differences: Difference[]; differenceCount: number }
 export interface SyncAlert { id: number; jobCode: string; runId: string | null; category: string; summary: string; status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED'; occurrenceCount: number; firstSeenAt: string; lastSeenAt: string }
 

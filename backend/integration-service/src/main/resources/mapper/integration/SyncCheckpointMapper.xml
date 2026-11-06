@@ -10,7 +10,7 @@
     <update id="markSuccess">update integration_schema.sync_checkpoint set last_success_at=clock_timestamp() where
         job_code=#{jobCode}
     </update>
-    <update id="resetIncomplete">update integration_schema.sync_checkpoint set committed_cursor=null,version=version+1
+    <update id="resetIncomplete">update integration_schema.sync_checkpoint set committed_cursor=null,version=version+1,generation=generation+1
         where job_code=#{jobCode} and baseline_complete=false
     </update>
 </mapper>

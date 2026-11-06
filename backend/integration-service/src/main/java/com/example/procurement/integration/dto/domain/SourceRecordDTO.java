@@ -3,5 +3,8 @@ package com.example.procurement.integration.dto.domain;
 import com.example.procurement.integration.domain.enums.MasterDataType;
 
 import java.time.Instant;
-public record SourceRecordDTO(MasterDataType entityType, String businessKey, long sourceVersion,
-        Instant changedAt, CostCenterDTO costCenter, ExchangeRateDTO exchangeRate) {}
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
+public record SourceRecordDTO(MasterDataType entityType, String businessKey,
+        @JsonSerialize(using = ToStringSerializer.class) long sourceId,
+        Instant updatedAt, CostCenterDTO costCenter, ExchangeRateDTO exchangeRate) {}

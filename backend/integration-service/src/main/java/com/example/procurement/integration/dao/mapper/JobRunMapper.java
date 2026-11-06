@@ -36,4 +36,9 @@ JobRunDO selectById(@Param("runId") UUID runId);
             @Param("fetched") int fetched, @Param("applied") int applied, @Param("ignored") int ignored);
     int updateTotal(@Param("runId") UUID runId, @Param("remaining") long remaining);
     int startReconciliation(@Param("runId") UUID runId, @Param("count") long count);
+    int saveScanContext(@Param("runId") UUID runId, @Param("json") String json);
+    int bindWindow(@Param("runId") UUID runId, @Param("windowId") UUID windowId,
+            @Param("end") java.time.Instant end, @Param("generation") long generation);
+    int completeWindow(@Param("runId") UUID runId);
+    int noSafeWindow(@Param("runId") UUID runId);
 }

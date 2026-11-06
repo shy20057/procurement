@@ -1,13 +1,15 @@
 package com.example.procurement.integration.client;
 
 import com.example.procurement.integration.domain.enums.MasterDataType;
-import com.example.procurement.integration.dto.resp.SnapshotRespDTO;
+import com.example.procurement.integration.dto.resp.SourceAnchorRespDTO;
+import com.example.procurement.integration.dto.domain.SourceCursorDTO;
+import com.example.procurement.integration.dto.domain.SourceRecordDTO;
 import com.example.procurement.integration.dto.resp.SourcePageRespDTO;
 import com.example.procurement.integration.exception.IntegrationProblem;
 import com.example.procurement.integration.support.MasterDataCodec;
 
 import java.time.Duration;
-import java.util.UUID;
+import java.time.Instant;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
@@ -46,25 +48,29 @@ public class SapMasterDataClient {
         this.mockKey = mockKey; // 	Mock 的鉴权 key
     }
 
-    // 先 snapshot() 建一份快照,拿到快照 id
-    public SnapshotRespDTO snapshot(MasterDataType type) {
-        return call(type, "/snapshots", HttpMethod.POST, SnapshotRespDTO.class);
+    public SourceAnchorRespDTO anchor(MasterDataType type) {
+        return call(type, "/anchor", SourceAnchorRespDTO.class, false);
     }
 
-    // 用 snapshotPage() 带游标(after)分页把基线拉完
-    public SourcePageRespDTO snapshotPage(MasterDataType type, UUID id, long after, int size) {
-        return call(type, "/snapshots/" + id + "?after=" + after + "&limit=" + size, HttpMethod.GET, SourcePageRespDTO.class);
+    public SourcePageRespDTO fullPage(MasterDataType type, long after, long max, int size) {
+        String path = UriComponentsBuilder.fromPath("/records").queryParam("afterId", after)
+                .queryParam("maxId", max).queryParam("limit", size).build().encode().toUriString();
+        return call(type, path, SourcePageRespDTO.class, false);
     }
 
-    // 之后用 changes() 按游标(after/upper)拉增量
-    public SourcePageRespDTO changes(MasterDataType type, String after, String upper, int size) {
-        String path = UriComponentsBuilder.fromPath("/changes").queryParam("after", after)
-                .queryParam("limit", size).queryParamIfPresent("upper", java.util.Optional.ofNullable(upper))
-                .build().encode().toUriString();
-        return call(type, path, HttpMethod.GET, SourcePageRespDTO.class);
+    public SourcePageRespDTO changes(MasterDataType type, Instant start, Instant end, SourceCursorDTO cursor, int size) {
+        UriComponentsBuilder path = UriComponentsBuilder.fromPath("/changes").queryParam("fromTime", start)
+                .queryParam("toTime", end).queryParam("limit", size);
+        if (cursor != null) path.queryParam("afterTime", cursor.updatedAt()).queryParam("afterId", cursor.sourceId());
+        return call(type, path.build().encode().toUriString(), SourcePageRespDTO.class, false);
     }
 
-    private <T> T call(MasterDataType type, String path, HttpMethod method, Class<T> responseType) {
+    /** Only an actual HTTP 404 means the source record is absent. */
+    public SourceRecordDTO find(MasterDataType type, long id) {
+        return call(type, "/records/" + id, SourceRecordDTO.class, true);
+    }
+
+    private <T> T call(MasterDataType type, String path, Class<T> responseType, boolean allowNotFound) {
         String base = configuredUrl;
         if (base.isBlank()) {
             // 没配置 SAP 地址:
@@ -78,13 +84,13 @@ public class SapMasterDataClient {
         headers.set("X-Mock-Sap-Key", configuredUrl.isBlank() ? mockKey : apiKey);
         try {
             T body = http.exchange(base.replaceAll("/$", "") + "/" + type.name() + path,
-                    method, new HttpEntity<>(headers), responseType).getBody();
+                    HttpMethod.GET, new HttpEntity<>(headers), responseType).getBody();
             codec.require(body != null, "SAP返回空响应");
             return body;
         } catch (HttpStatusCodeException e) {
             int status = e.getStatusCode().value();
-            String code = status == 410 ? "SNAPSHOT_EXPIRED" : "SAP_HTTP_" + status;
-            throw new IntegrationProblem(code, status == 410 ? "SAP快照已过期，请重建未完成基线" : "SAP接口返回HTTP " + status,
+            if (allowNotFound && status == 404) return null;
+            throw new IntegrationProblem("SAP_HTTP_" + status, "SAP接口返回HTTP " + status,
                     status == 429 || status >= 500, 502);
         } catch (ResourceAccessException e) {
             throw new IntegrationProblem("SAP_NETWORK_ERROR", "SAP连接失败或读取超时", true, 502);

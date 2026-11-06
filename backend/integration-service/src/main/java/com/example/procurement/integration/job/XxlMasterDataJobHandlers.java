@@ -44,6 +44,16 @@ public class XxlMasterDataJobHandlers {
      * 根据结果调用 runtime.success() / runtime.fail() 向调度中心报告。
      * */
     private void execute(String jobCode) {
+        execute(jobCode,"AUTO");
+    }
+
+    @XxlJob("sapCostCenterReconcileJobHandler")
+    public void reconcileCostCenters() { execute("SAP_COST_CENTER_DELTA","RECONCILE"); }
+
+    @XxlJob("sapExchangeRateReconcileJobHandler")
+    public void reconcileExchangeRates() { execute("SAP_EXCHANGE_RATE_DELTA","RECONCILE"); }
+
+    private void execute(String jobCode,String mode) {
         try {
             // 生成幂等身份
             XxlExecutionIdentity identity = XxlExecutionIdentity.from(
@@ -52,7 +62,9 @@ public class XxlMasterDataJobHandlers {
             XxlTriggerMetadata metadata = new XxlTriggerMetadata(
                     runtime.jobId(), identity.logKey(), runtime.shardIndex(), runtime.shardTotal(), executorAddress);
             // 真正执行
-            JobExecutionResult result = coordinator.executeFromXxl(jobCode, metadata, identity.requestId());
+            JobExecutionResult result = "AUTO".equals(mode)
+                    ? coordinator.executeFromXxl(jobCode, metadata, identity.requestId())
+                    : coordinator.executeFromXxl(jobCode, mode, metadata, identity.requestId());
             // 回报结果
             runtime.log("SRM business runId=" + result.runId());
             if (result.success()) {

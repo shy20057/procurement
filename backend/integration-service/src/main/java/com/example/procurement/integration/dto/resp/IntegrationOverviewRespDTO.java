@@ -9,5 +9,6 @@ public record IntegrationOverviewRespDTO(long costCenterCount, long exchangeRate
                                          long openAlertCount, long activeRunCount, List<JobDefinitionRespDTO> jobs,
                                          boolean mockEnabled, boolean managementEnabled, String schedulerProvider,
                                          boolean xxlEnabled, String xxlAdminUrl, String xxlExecutorAppName,
-                                         boolean emailEnabled, int pageSize, int writeBatchSize) {
+                                         boolean emailEnabled, int pageSize, int writeBatchSize,
+                                         int settleDelaySeconds, int overlapSeconds) {
 }

@@ -102,7 +102,7 @@ public class IntegrationQueryServiceImpl implements IntegrationQueryService {
                 xxlExecutorAppName,         // XXL 执行器 app 名
                 false,                      // 邮件告警开关(当前未启用)
                 settings.pageSize,          // 同步分页大小
-                settings.writeBatchSize);   // 同步批量写入大小
+                settings.writeBatchSize, settings.settleDelaySeconds, settings.overlapSeconds);
     }
 
     @Override
@@ -138,9 +138,10 @@ public class IntegrationQueryServiceImpl implements IntegrationQueryService {
         MasterDataType type = MasterDataType.forJob(jobCode);
         SyncCheckpointDO stored = checkpoints.selectByJob(jobCode);
         SyncCheckpoint state = stored == null || stored.getCommittedCursor() == null || stored.getCommittedCursor().isBlank()
-                ? SyncCheckpoint.initial(type) : codec.read(stored.getCommittedCursor(), SyncCheckpoint.class);
-        return new SyncCheckpointRespDTO(state.mode(), state.sourceCursor(), state.snapshotId(),
-                state.snapshotPosition(), state.baselineCursor(), state.upperCursor());
+                ? new SyncCheckpoint("TIME_WINDOW_V2",stored==null||stored.getGeneration()==null?1:stored.getGeneration(),
+                        false,null,0,0,null,null,null,null,null,null,null,0)
+                : codec.read(stored.getCommittedCursor(), SyncCheckpoint.class);
+        return new SyncCheckpointRespDTO(state);
     }
 
     @Override

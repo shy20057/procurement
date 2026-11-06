@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { DataType, RunMode, Overview, Page, TargetRecord, SourceRecord, SyncRun, RunDetail, SyncAlert, CostCenter, ExchangeRate } from '@/types/integration'
+import type { DataType, RunMode, Overview, Page, TargetRecord, SourceRecord, SyncRun, RunDetail, SyncAlert, CostCenter, ExchangeRate, SourceSaveRequest, SyncCheckpoint } from '@/types/integration'
 
 interface Envelope<T> { code: string; message: string; data: T }
 const adminHeaders = () => {
@@ -14,6 +14,7 @@ const base = '/api/integration'
 
 export const integrationApi = {
   overview: () => get<Overview>(`${base}/overview`),
+  checkpoint: (code: string) => get<SyncCheckpoint>(`${base}/jobs/${code}/checkpoint`),
   records: (type: DataType, page: number, keyword: string) => get<Page<TargetRecord>>(`${base}/${type === 'COST_CENTER' ? 'cost-centers' : 'exchange-rates'}`, { page, size: 20, keyword }),
   // ① 运行记录列表：前端在这里筛出 status=FAILED/CANCELLED 的行，拿到它的 runId（另一条来源是 overview 的 latestRunId）
   runs: (page: number) => get<Page<SyncRun>>(`${base}/job-runs`, { page, size: 20 }),
@@ -30,6 +31,6 @@ export const integrationApi = {
   source: (type: DataType, page: number) => get<Page<SourceRecord>>(`${base}/mock-sap/${type}`, { page, size: 20 }),
   sourceFault: (type: DataType) => get<{ unavailable: boolean }>(`${base}/mock-sap/${type}/fault`),
   setSourceFault: (type: DataType, unavailable: boolean) => post<{ unavailable: boolean }>(`${base}/mock-sap/${type}/fault`, { enabled: unavailable }),
-  saveCostCenter: (data: CostCenter, expectedVersion: number) => post<SourceRecord>(`${base}/mock-sap/cost-centers`, { data, expectedVersion }),
-  saveExchangeRate: (data: ExchangeRate, expectedVersion: number) => post<SourceRecord>(`${base}/mock-sap/exchange-rates`, { data, expectedVersion }),
+  saveCostCenter: (request: SourceSaveRequest<CostCenter>) => post<SourceRecord>(`${base}/mock-sap/cost-centers`, request),
+  saveExchangeRate: (request: SourceSaveRequest<ExchangeRate>) => post<SourceRecord>(`${base}/mock-sap/exchange-rates`, request),
 }

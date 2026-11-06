@@ -4,7 +4,7 @@
   <select id="selectByRequestId" resultType="com.example.procurement.integration.dao.entity.JobRequestKeyDO">
     select * from integration_schema.job_request_key where request_id=#{requestId}
   </select>
-  <insert id="insert">insert into integration_schema.job_request_key(request_id,run_id,job_code,mode)
-    values (#{requestId},#{runId},#{jobCode},#{mode})
+  <insert id="insert">insert into integration_schema.job_request_key(request_id,run_id,job_code,mode,request_fingerprint)
+    values (#{requestId},#{runId},#{jobCode},#{mode},#{requestFingerprint})
   </insert>
 </mapper>

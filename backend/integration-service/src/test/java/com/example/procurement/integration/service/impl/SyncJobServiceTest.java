@@ -80,7 +80,7 @@ class SyncJobServiceTest {
     void exactSuccessfulXxlReplayReusesOriginalRun() {
         UUID original = UUID.randomUUID();
         when(definitions.lockDefinition("SAP_COST_CENTER_DELTA")).thenReturn(definition(true));
-        JobRunDO previous = new JobRunDO(); previous.setRunId(original); previous.setStatus("SUCCEEDED");
+        JobRunDO previous = new JobRunDO(); previous.setRunId(original); previous.setStatus("SUCCEEDED"); previous.setMode("AUTO");
         when(runs.lockXxlIdentity("SAP_COST_CENTER_DELTA", 12L, "a".repeat(64), 0)).thenReturn(previous);
 
         XxlSubmission result = service.submitXxl("SAP_COST_CENTER_DELTA", metadata(), "request-xxl");

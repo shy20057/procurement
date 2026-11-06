@@ -68,6 +68,7 @@ public class SyncJobServiceImpl implements SyncJobService {
     public UUID submit(String jobCode, String mode, String requestId, String reason, String trigger, UUID parent) {
         MasterDataType.forJob(jobCode); // 任务校验
         validateRequest(mode, requestId, reason); // 提交参数校验
+        String fingerprint=fingerprint(jobCode,mode,reason,trigger,parent);
         return tx.execute(status -> { // 开启事务
             JobDefinitionDO definition = lockDefinition(jobCode); // 查询同步任务配置表  select * from integration_schema.job_definition where job_code=#{jobCode} for update
             JobRequestKeyDO previous = requests.selectByRequestId(requestId); // 幂等键登记表 返回为null证明是第一次请求
@@ -75,6 +76,8 @@ public class SyncJobServiceImpl implements SyncJobService {
                 if (!jobCode.equals(previous.getJobCode()) || !mode.equals(previous.getMode())) {
                     throw problem("IDEMPOTENCY_CONFLICT", "同一幂等键不能用于不同任务", 409);
                 }
+                if(previous.getRequestFingerprint()!=null&&!fingerprint.equals(previous.getRequestFingerprint()))
+                    throw problem("IDEMPOTENCY_CONFLICT","同一幂等键不能用于不同请求参数",409);
                 return previous.getRunId();
             }
             if (!Boolean.TRUE.equals(definition.getEnabled()))
@@ -92,14 +95,20 @@ public class SyncJobServiceImpl implements SyncJobService {
                 runs.insert(run);
                 id = run.getRunId();
             }
-            insertRequest(requestId, id, jobCode, mode); //  job_request_key 这个请求对应哪次运行（幂等）
+            insertRequest(requestId, id, jobCode, mode, fingerprint);
             return id;
         });
     }
 
     @Override
     public XxlSubmission submitXxl(String jobCode, XxlTriggerMetadata metadata, String requestId) {
+        return submitXxl(jobCode,"AUTO",metadata,requestId);
+    }
+
+    @Override
+    public XxlSubmission submitXxl(String jobCode, String mode, XxlTriggerMetadata metadata, String requestId) {
         MasterDataType.forJob(jobCode);
+        if(!List.of("AUTO","RECONCILE").contains(mode))throw problem("INVALID_MODE","定时任务只允许同步或只读对账",422);
         if (metadata == null || metadata.logKey() == null || !metadata.logKey().matches("[0-9a-f]{64}")) {
             throw problem("INVALID_XXL_CONTEXT", "XXL-JOB日志键不合法", 422);
         }
@@ -108,12 +117,13 @@ public class SyncJobServiceImpl implements SyncJobService {
             JobDefinitionDO definition = lockDefinition(jobCode);
             JobRunDO previous = runs.lockXxlIdentity(jobCode, metadata.jobId(), metadata.logKey(), metadata.shardIndex());
             if (previous != null) {
+                if(!mode.equals(previous.getMode()))throw problem("IDEMPOTENCY_CONFLICT","同次调度身份不能切换运行模式",409);
                 if (List.of("SUCCEEDED", "FAILED", "CANCELLED").contains(previous.getStatus())) {
                     return XxlSubmission.terminal(previous.getRunId(), previous.getStatus(), previous.getErrorCode(), previous.getErrorSummary());
                 }
                 return XxlSubmission.busy(previous.getRunId(), "相同XXL调度请求仍在执行");
             }
-            JobRunDO run = newRun(jobCode, "AUTO", requestId, "XXL-JOB调度触发", "XXL");
+            JobRunDO run = newRun(jobCode, mode, requestId, "XXL-JOB调度触发", "XXL");
             run.setXxlJobId(metadata.jobId());
             run.setXxlLogKey(metadata.logKey());
             run.setXxlShardIndex(metadata.shardIndex());
@@ -121,7 +131,7 @@ public class SyncJobServiceImpl implements SyncJobService {
             run.setExecutorAddress(metadata.executorAddress());
             runs.insert(run);
             UUID id = run.getRunId();
-            insertRequest(requestId, id, jobCode, "AUTO");
+            insertRequest(requestId, id, jobCode, mode, fingerprint(jobCode,mode,"XXL-JOB调度触发","XXL",null));
             if (!Boolean.TRUE.equals(definition.getEnabled())) {
                 failPending(id, "JOB_DISABLED", "当前任务已被业务执行开关停用");
                 return XxlSubmission.disabled(id);
@@ -176,7 +186,8 @@ public class SyncJobServiceImpl implements SyncJobService {
     public void success(JobContext context) {
         leases.fenced(context, () -> {
             runs.markSuccess(context.runId());
-            if ("AUTO".equals(context.mode())) {
+            JobRunDO completed=runs.selectById(context.runId());
+            if ("AUTO".equals(context.mode()) && completed!=null && Boolean.TRUE.equals(completed.getCaughtUp())) {
                 checkpoints.markSuccess(context.type().jobCode);
                 // 告警更新和成功终态与当前页事务使用同一个数据源。
                 alerts.resolveSync(context.type().jobCode);
@@ -202,7 +213,10 @@ public class SyncJobServiceImpl implements SyncJobService {
             long delay = Math.min(300, 30L << Math.min(4, context.attempt() - 1));
             delay += ThreadLocalRandom.current().nextLong(Math.max(1, delay / 5));
             runs.markFailure(context.runId(), retry ? "RETRY_WAIT" : "FAILED", error.code, summary, retry, delay);
-            if (!retry || context.attempt() >= 3) alerts.alert(context.type().jobCode, context.runId(), "SYNC_FAILURE", summary);
+            if (error.code.startsWith("SOURCE_") || error.code.startsWith("CHECKPOINT_") || "INVALID_PAGE".equals(error.code))
+                alerts.alert(context.type().jobCode,context.runId(),error.code,summary);
+            if ((!retry || context.attempt() >= 3) && !"RECONCILIATION_CONFIRM_WAIT".equals(error.code))
+                alerts.alert(context.type().jobCode, context.runId(), "SYNC_FAILURE", summary);
             return null;
         });
     }
@@ -271,10 +285,19 @@ public class SyncJobServiceImpl implements SyncJobService {
         return run;
     }
 
-    private void insertRequest(String requestId, UUID runId, String jobCode, String mode) {
+    private void insertRequest(String requestId, UUID runId, String jobCode, String mode, String fingerprint) {
         JobRequestKeyDO request = new JobRequestKeyDO();
         request.setRequestId(requestId); request.setRunId(runId); request.setJobCode(jobCode); request.setMode(mode);
+        request.setRequestFingerprint(fingerprint);
         requests.insert(request);
+    }
+
+    private String fingerprint(String jobCode,String mode,String reason,String trigger,UUID parent) {
+        try {
+            String input=String.join(String.valueOf((char)0),jobCode,mode,reason,trigger,String.valueOf(parent));
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch(java.security.NoSuchAlgorithmException impossible) {throw new IllegalStateException(impossible);}
     }
 
     private void validateRequest(String mode, String requestId, String reason) {
