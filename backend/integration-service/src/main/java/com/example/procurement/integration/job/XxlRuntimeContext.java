@@ -9,6 +9,7 @@ public interface XxlRuntimeContext {
     String jobLogFileName();
     int shardIndex();
     int shardTotal();
+    default String jobParam() { return ""; }
     void log(String message);
     void success(String message);
     void fail(String message);

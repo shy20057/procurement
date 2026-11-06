@@ -1,10 +1,20 @@
 export type DataType = 'COST_CENTER' | 'EXCHANGE_RATE'
+export const PURCHASE_ORDER_JOB = 'SAP_PURCHASE_ORDER_DELTA'
+export const isPurchaseOrderJob = (code: string) => code === PURCHASE_ORDER_JOB
+export const syncJobLabel = (code: string) => {
+  switch (code) {
+    case PURCHASE_ORDER_JOB: return '采购订单'
+    case 'SAP_COST_CENTER_DELTA': return '成本中心'
+    case 'SAP_EXCHANGE_RATE_DELTA': return '汇率'
+    default: return code
+  }
+}
 export type RunMode = 'AUTO' | 'RECONCILE' | 'REPAIR'
 export type RunStatus = 'PENDING' | 'RUNNING' | 'RETRY_WAIT' | 'CANCEL_REQUESTED' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED'
 
 export interface Page<T> { list: T[]; total: number; page: number; size: number }
 export interface JobDefinition {
-  jobCode: string; entityType: DataType; name: string; enabled: boolean
+  jobCode: string; entityType: DataType | 'PURCHASE_ORDER'; name: string; enabled: boolean
   cronExpression: string; zoneId: string; handlerCode: string; resourceKey: string; baselineComplete: boolean
   committedCursor: string | null; lastSuccessAt: string | null
   latestRunId: string | null; latestStatus: RunStatus | null; checkpointVersion: number

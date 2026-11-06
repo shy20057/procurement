@@ -4,7 +4,8 @@ import com.example.procurement.integration.exception.IntegrationProblem;
 
 public enum MasterDataType {
     COST_CENTER("SAP_COST_CENTER_DELTA", "cc"),
-    EXCHANGE_RATE("SAP_EXCHANGE_RATE_DELTA", "fx");
+    EXCHANGE_RATE("SAP_EXCHANGE_RATE_DELTA", "fx"),
+    PURCHASE_ORDER("SAP_PURCHASE_ORDER_DELTA", "po");
     public final String jobCode;
     public final String prefix;
     MasterDataType(String jobCode, String prefix) { this.jobCode = jobCode; this.prefix = prefix; }

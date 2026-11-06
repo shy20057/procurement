@@ -11,7 +11,9 @@
   </insert>
   <update id="resolveSync">
     update integration_schema.sync_alert a set status='RESOLVED' where a.job_code=#{jobCode}
-      and (a.category='SYNC_FAILURE' or (a.category='STALE' and not exists(
+      and (a.category='SYNC_FAILURE' or (a.job_code='SAP_PURCHASE_ORDER_DELTA' and
+        (a.category like 'SOURCE_%' or a.category like 'CHECKPOINT_%' or a.category='INVALID_PAGE'))
+        or (a.category='STALE' and not exists(
         select 1 from integration_schema.sync_checkpoint c where c.job_code=a.job_code and <include refid="staleCondition"/>
       )))
   </update>
@@ -20,11 +22,13 @@
     ((c.job_code='SAP_COST_CENTER_DELTA' and
         coalesce((c.committed_cursor::jsonb-&gt;&gt;'completedWatermark')::timestamptz,to_timestamp(0))&lt;clock_timestamp()-interval '32 minutes')
       or (c.job_code='SAP_EXCHANGE_RATE_DELTA' and
-        coalesce((c.committed_cursor::jsonb-&gt;&gt;'completedWatermark')::timestamptz,to_timestamp(0))&lt;clock_timestamp()-interval '26 hours'))
+        coalesce((c.committed_cursor::jsonb-&gt;&gt;'completedWatermark')::timestamptz,to_timestamp(0))&lt;clock_timestamp()-interval '26 hours')
+      or (c.job_code='SAP_PURCHASE_ORDER_DELTA' and c.baseline_complete=true and
+        (c.committed_cursor::jsonb-&gt;&gt;'completedWatermark')::timestamptz&lt;clock_timestamp()-interval '10 minutes'))
   </sql>
   <select id="selectStaleJobCodes" resultType="string">
     select c.job_code from integration_schema.sync_checkpoint c join integration_schema.job_definition d using(job_code)
-    where d.enabled=true and <include refid="staleCondition"/>
+    where d.enabled=true and d.entity_type&lt;&gt;'PURCHASE_ORDER' and <include refid="staleCondition"/>
   </select>
   <select id="countOpen" resultType="long">select count(*) from integration_schema.sync_alert where status&lt;&gt;'RESOLVED'</select>
   <select id="countAll" resultType="long">select count(*) from integration_schema.sync_alert</select>

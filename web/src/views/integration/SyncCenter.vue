@@ -1,7 +1,7 @@
 <template>
   <div class="sync-page">
     <header class="page-heading">
-      <div><span class="eyebrow">INTEGRATION / SAP MASTER DATA</span><h1>主数据同步中心</h1><p>按固定窗口同步外围主数据的最新状态，记录完整水位与每页进度。</p></div>
+      <div><span class="eyebrow">INTEGRATION / SAP</span><h1>{{ purchaseOrderJob ? 'ERP 数据同步中心' : '主数据同步中心' }}</h1><p>按固定窗口同步外围数据，记录完整水位与每页进度。</p></div>
       <div class="heading-actions"><span class="live-label"><i :class="{ busy: overview?.activeRunCount }" />{{ overview?.activeRunCount ? '任务运行中' : '每 5 秒刷新' }}</span><el-button @click="configureKey">管理密钥</el-button><el-button :loading="loading" @click="refresh">刷新看板</el-button></div>
     </header>
 
@@ -18,16 +18,41 @@
       <div class="scheduler-meta"><el-tag :type="overview?.xxlEnabled ? 'success' : 'info'">{{ overview?.xxlEnabled ? '执行器已配置' : '执行器未启用' }}</el-tag><span>AppName：<code>{{ overview?.xxlExecutorAppName || '—' }}</code></span><el-button :disabled="!adminUrl" @click="openScheduler">打开 XXL-JOB 控制台</el-button></div>
     </section>
 
-    <section class="pipeline"><div><span class="step-number">01</span><strong>{{ overview?.mockEnabled ? 'SAP 模拟源' : 'SAP 外围接口' }}</strong><small>当前状态 · 源 ID + 微秒修改时间</small></div><span class="flow-arrow">→</span><div><span class="step-number">02</span><strong>固定时间窗口分页</strong><small>{{ overview?.pageSize ?? '—' }} 条 / 页 · 组合游标</small></div><span class="flow-arrow">→</span><div><span class="step-number">03</span><strong>批量幂等写入</strong><small>{{ overview?.writeBatchSize ?? '—' }} 条 / SQL · 源时间保护</small></div><span class="flow-arrow">→</span><div><span class="step-number">04</span><strong>对账与异常恢复</strong><small>页级回滚 · 持久化重试 · 差异复核</small></div></section>
-    <el-alert class="connection-error" :title="`安全延迟 ${overview?.settleDelaySeconds ?? 120} 秒 · 重叠回扫 ${overview?.overlapSeconds ?? 300} 秒`" description="刚保存的源端变化可能需等待所示安全延迟（默认约 2 分钟）进入安全窗口，再由同步任务拉取。完整水位只在整个窗口完成后推进；当前页游标仅代表窗口内进度。全量扫描和对账不是源端同一时点的快照。" type="info" :closable="false" show-icon />
+    <section class="pipeline"><div><span class="step-number">01</span><strong>{{ overview?.mockEnabled ? 'SAP 模拟源' : 'SAP 外围接口' }}</strong><small>当前状态 · 源 ID + 微秒修改时间</small></div><span class="flow-arrow">→</span><div><span class="step-number">02</span><strong>固定时间窗口分页</strong><small>{{ purchaseOrderJob ? '组合游标 · 按发布变更时间' : `${overview?.pageSize ?? '—'} 条 / 页 · 组合游标` }}</small></div><span class="flow-arrow">→</span><div><span class="step-number">03</span><strong>批量幂等写入</strong><small>{{ purchaseOrderJob ? '同页提交订单头、行与检查点' : `${overview?.writeBatchSize ?? '—'} 条 / SQL · 源时间保护` }}</small></div><span class="flow-arrow">→</span><div><span class="step-number">04</span><strong>对账与异常恢复</strong><small>{{ purchaseOrderJob ? '页级回滚 · XXL-JOB 重试' : '页级回滚 · 持久化重试 · 差异复核' }}</small></div></section>
+    <el-alert v-if="purchaseOrderJob" class="connection-error" title="采购订单由 XXL-JOB 调度" :description="`增量上界取 ERP 当前时间，重叠回扫 ${overview?.overlapSeconds ?? 300} 秒。同步、重试、对账与修复均在 XXL-JOB Admin 操作。`" type="info" :closable="false" show-icon />
+    <el-alert v-else class="connection-error" :title="`安全延迟 ${overview?.settleDelaySeconds ?? 120} 秒 · 重叠回扫 ${overview?.overlapSeconds ?? 300} 秒`" description="刚保存的源端变化可能需等待所示安全延迟（默认约 2 分钟）进入安全窗口，再由同步任务拉取。完整水位只在整个窗口完成后推进；当前页游标仅代表窗口内进度。全量扫描和对账不是源端同一时点的快照。" type="info" :closable="false" show-icon />
 
     <div class="job-grid" v-loading="loading && !overview">
-      <article v-for="job in overview?.jobs || []" :key="job.jobCode" class="job-card">
-        <div class="job-top"><div class="job-title"><el-icon><component :is="job.entityType === 'COST_CENTER' ? OfficeBuilding : Money" /></el-icon><div><h2>{{ job.name }}</h2><span class="mono">{{ job.jobCode }}</span></div></div><el-tag :type="job.baselineComplete ? 'success' : 'info'" size="small">{{ job.baselineComplete ? '基线已建立' : '待首次全量' }}</el-tag></div>
-        <dl><div><dt>最近完整同步</dt><dd>{{ formatTime(job.lastSuccessAt) }}</dd></div><div><dt>安全窗口积压</dt><dd>{{ checkpointLag(checkpoint(job), overview?.settleDelaySeconds ?? 120) }}</dd></div><div><dt>执行计划</dt><dd><code>{{ job.cronExpression }}</code> · {{ job.zoneId }} <span v-if="!overview?.xxlEnabled">（XXL执行器未启用）</span></dd></div><div><dt>Handler</dt><dd><code>{{ job.handlerCode }}</code></dd></div><div><dt>资源租约</dt><dd><code>{{ job.resourceKey }}</code></dd></div></dl>
-        <div class="checkpoint checkpoint-grid"><span>检查点 v{{ job.checkpointVersion }} · 代次 {{ checkpoint(job)?.generation ?? '—' }}</span><code>TIME_WINDOW_V2</code><span>完整水位 W</span><code>{{ checkpoint(job)?.completedWatermark || '基线尚未完成' }}</code><span>活动窗口 [S, E)</span><code>{{ checkpoint(job)?.activeWindowId ? `[${checkpoint(job)?.windowStartAt}, ${checkpoint(job)?.windowEndAt})` : '无活动窗口' }}</code><span>窗口 ID</span><code>{{ checkpoint(job)?.activeWindowId || '—' }}</code><span>当前页位置</span><code>{{ checkpointCursor(checkpoint(job)) }}</code><span>基线锚点 / 固定 ID 上界</span><code>{{ checkpoint(job)?.baselineAnchorAt || '—' }} / {{ checkpoint(job)?.baselineMaxSourceId ?? '—' }}</code><span>已提交页数 / 最近成功页</span><code>{{ checkpoint(job)?.pageSequence ?? 0 }} / {{ checkpoint(job)?.lastPageAt || '—' }}</code><span>源时间高水位</span><code>{{ checkpoint(job)?.sourceTimeHighwater || '—' }}</code></div>
-        <div class="job-bottom"><el-button type="primary" :loading="triggering === `${job.jobCode}:AUTO`" :disabled="!overview?.managementEnabled || isActiveRun(job.latestStatus)" @click="trigger(job, 'AUTO')">{{ job.baselineComplete ? '拉取增量' : '首次全量同步' }}</el-button><el-dropdown @command="(mode: RunMode) => trigger(job, mode)"><el-button :disabled="!overview?.managementEnabled || isActiveRun(job.latestStatus)">对账与修复<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="RECONCILE">只读全量对账</el-dropdown-item><el-dropdown-item command="REPAIR">对账并修复差异</el-dropdown-item></el-dropdown-menu></template></el-dropdown><el-button v-if="job.latestRunId" link type="primary" @click="selectedRun = job.latestRunId"><el-tag :type="statusTone(job.latestStatus)" size="small">{{ statusLabel(job.latestStatus) }}</el-tag><span class="detail-link">查看详情</span></el-button></div>
-        <div class="job-footer"><span>业务执行开关 <el-switch :model-value="job.enabled" size="small" :disabled="!overview?.managementEnabled" @change="(value: string | number | boolean) => toggleJob(job, Boolean(value))" /></span><small>Cron 启停请在 XXL-JOB Admin 操作</small><el-button v-if="!job.baselineComplete && !isActiveRun(job.latestStatus)" :disabled="!overview?.managementEnabled" link type="warning" @click="resetBaseline(job)">重建未完成基线</el-button></div>
+      <article v-for="job in orderedJobs" :key="job.jobCode" class="job-card">
+        <div class="job-top"><div class="job-title"><el-icon><component :is="job.entityType === 'PURCHASE_ORDER' ? Document : job.entityType === 'COST_CENTER' ? OfficeBuilding : Money" /></el-icon><div><h2>{{ job.name }}</h2><span class="mono">{{ job.jobCode }}</span></div></div><el-tag :type="job.baselineComplete ? 'success' : 'info'" size="small">{{ job.baselineComplete ? '基线已建立' : '待首次全量' }}</el-tag></div>
+        <dl><div><dt>最近完整同步</dt><dd>{{ formatTime(job.lastSuccessAt) }}</dd></div><div v-if="!isPurchaseOrderJob(job.jobCode)"><dt>安全窗口积压</dt><dd>{{ checkpointLag(checkpoint(job), overview?.settleDelaySeconds ?? 120) }}</dd></div><div><dt>执行计划</dt><dd><code>{{ job.cronExpression }}</code> · {{ job.zoneId }} <span v-if="!overview?.xxlEnabled">（XXL执行器未启用）</span></dd></div><div><dt>Handler</dt><dd><code>{{ job.handlerCode }}</code></dd></div><div><dt>资源租约</dt><dd><code>{{ job.resourceKey }}</code></dd></div></dl>
+        <div v-if="isPurchaseOrderJob(job.jobCode)" class="checkpoint checkpoint-grid">
+          <span>检查点</span><code>v{{ job.checkpointVersion }}</code>
+          <span>完整水位 W</span><code>{{ orderCheckpoint?.completedWatermark || '基线尚未完成' }}</code>
+          <span>活动窗口上界</span><code>{{ orderCheckpoint?.windowEndAt || '无活动窗口' }}</code>
+          <span>最后提交的页游标</span><code>{{ purchaseOrderCursor(orderCheckpoint) }}</code>
+        </div>
+        <div v-else class="checkpoint checkpoint-grid"><span>检查点 v{{ job.checkpointVersion }} · 代次 {{ checkpoint(job)?.generation ?? '—' }}</span><code>TIME_WINDOW_V2</code><span>完整水位 W</span><code>{{ checkpoint(job)?.completedWatermark || '基线尚未完成' }}</code><span>活动窗口 [S, E)</span><code>{{ checkpoint(job)?.activeWindowId ? `[${checkpoint(job)?.windowStartAt}, ${checkpoint(job)?.windowEndAt})` : '无活动窗口' }}</code><span>窗口 ID</span><code>{{ checkpoint(job)?.activeWindowId || '—' }}</code><span>当前页位置</span><code>{{ checkpointCursor(checkpoint(job)) }}</code><span>基线锚点 / 固定 ID 上界</span><code>{{ checkpoint(job)?.baselineAnchorAt || '—' }} / {{ checkpoint(job)?.baselineMaxSourceId ?? '—' }}</code><span>已提交页数 / 最近成功页</span><code>{{ checkpoint(job)?.pageSequence ?? 0 }} / {{ checkpoint(job)?.lastPageAt || '—' }}</code><span>源时间高水位</span><code>{{ checkpoint(job)?.sourceTimeHighwater || '—' }}</code></div>
+        <div class="job-bottom">
+          <template v-if="isPurchaseOrderJob(job.jobCode)">
+            <el-button type="primary" :disabled="!adminUrl" @click="openScheduler">前往 XXL-JOB Admin</el-button>
+            <span v-if="!adminUrl" class="table-hint">请先配置 Admin 地址</span>
+          </template>
+          <template v-else>
+            <el-button type="primary" :loading="triggering === `${job.jobCode}:AUTO`" :disabled="!overview?.managementEnabled || isActiveRun(job.latestStatus)" @click="trigger(job, 'AUTO')">{{ job.baselineComplete ? '拉取增量' : '首次全量同步' }}</el-button>
+            <el-dropdown @command="(mode: RunMode) => trigger(job, mode)">
+              <el-button :disabled="!overview?.managementEnabled || isActiveRun(job.latestStatus)">对账与修复<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="RECONCILE">只读全量对账</el-dropdown-item>
+                  <el-dropdown-item command="REPAIR">对账并修复差异</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+          <el-button v-if="job.latestRunId" link type="primary" @click="selectedRun = job.latestRunId"><el-tag :type="statusTone(job.latestStatus)" size="small">{{ statusLabel(job.latestStatus) }}</el-tag><span class="detail-link">查看详情</span></el-button>
+        </div>
+        <div class="job-footer"><span>业务执行开关 <el-switch :model-value="job.enabled" size="small" :disabled="!overview?.managementEnabled" @change="(value: string | number | boolean) => toggleJob(job, Boolean(value))" /></span><small>Cron 启停请在 XXL-JOB Admin 操作</small><el-button v-if="!isPurchaseOrderJob(job.jobCode) && !job.baselineComplete && !isActiveRun(job.latestStatus)" :disabled="!overview?.managementEnabled" link type="warning" @click="resetBaseline(job)">重建未完成基线</el-button></div>
       </article>
     </div>
 
@@ -48,34 +73,34 @@
           <el-pagination class="pagination" v-model:current-page="dataPage" :page-size="20" :total="dataTotal" layout="total, prev, pager, next" @current-change="loadRecords" />
         </el-tab-pane>
         <el-tab-pane label="同步运行记录" name="runs">
-          <p class="table-hint">每次执行有独立运行ID；自动重试沿用原运行，人工补偿创建关联的新运行。</p>
-          <el-table :data="runs" v-loading="tableLoading" stripe><el-table-column label="运行ID" min-width="165"><template #default="{ row }"><el-button link type="primary" @click="selectedRun = row.runId"><span class="mono">{{ row.runId.slice(0, 13) }}…</span></el-button></template></el-table-column><el-table-column label="数据流" min-width="135"><template #default="{ row }">{{ row.jobCode === 'SAP_COST_CENTER_DELTA' ? '成本中心' : '汇率' }} · {{ modeLabel(row.mode) }}</template></el-table-column><el-table-column label="触发" width="105"><template #default="{ row }"><el-tag :type="row.triggerType === 'XXL' ? 'primary' : 'info'" size="small">{{ row.triggerType }}</el-tag></template></el-table-column><el-table-column label="XXL任务" width="95"><template #default="{ row }">{{ row.xxlJobId ?? '—' }}</template></el-table-column><el-table-column label="状态" width="115"><template #default="{ row }"><el-tag :type="statusTone(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column><el-table-column prop="attemptNo" label="次数" width="65" /><el-table-column label="拉取 / 应用 / 忽略" width="160"><template #default="{ row }">{{ row.fetchedCount }} / {{ row.appliedCount }} / {{ row.ignoredCount }}</template></el-table-column><el-table-column prop="reason" label="原因" min-width="160" show-overflow-tooltip /><el-table-column label="创建时间" width="180"><template #default="{ row }">{{ formatTime(row.createdAt) }}</template></el-table-column><el-table-column label="操作" width="85"><template #default="{ row }"><el-button link type="primary" @click="selectedRun = row.runId">详情</el-button></template></el-table-column></el-table>
+          <p class="table-hint">每次执行可按运行 ID 查询。采购订单由 XXL-JOB 重试或手动触发，增量从最后提交页续跑。</p>
+          <el-table :data="runs" v-loading="tableLoading" stripe><el-table-column label="运行ID" min-width="165"><template #default="{ row }"><el-button link type="primary" @click="selectedRun = row.runId"><span class="mono">{{ row.runId.slice(0, 13) }}…</span></el-button></template></el-table-column><el-table-column label="数据流" min-width="135"><template #default="{ row }">{{ syncJobLabel(row.jobCode) }} · {{ modeLabel(row.mode) }}</template></el-table-column><el-table-column label="触发" width="105"><template #default="{ row }"><el-tag :type="row.triggerType === 'XXL' ? 'primary' : 'info'" size="small">{{ row.triggerType }}</el-tag></template></el-table-column><el-table-column label="XXL任务" width="95"><template #default="{ row }">{{ row.xxlJobId ?? '—' }}</template></el-table-column><el-table-column label="状态" width="115"><template #default="{ row }"><el-tag :type="statusTone(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column><el-table-column prop="attemptNo" label="次数" width="65" /><el-table-column label="拉取 / 应用 / 忽略" width="160"><template #default="{ row }">{{ row.fetchedCount }} / {{ row.appliedCount }} / {{ row.ignoredCount }}</template></el-table-column><el-table-column prop="reason" label="原因" min-width="160" show-overflow-tooltip /><el-table-column label="创建时间" width="180"><template #default="{ row }">{{ formatTime(row.createdAt) }}</template></el-table-column><el-table-column label="操作" width="85"><template #default="{ row }"><el-button link type="primary" @click="selectedRun = row.runId">详情</el-button></template></el-table-column></el-table>
           <el-pagination class="pagination" v-model:current-page="runPage" :page-size="20" :total="runTotal" layout="total, prev, pager, next" @current-change="loadRuns" />
         </el-tab-pane>
         <el-tab-pane :label="`告警待办${overview?.openAlertCount ? ` (${overview.openAlertCount})` : ''}`" name="alerts">
-          <el-alert title="告警持久化保存在数据库；邮件通知尚未接入。已读仅代表确认收到，追赶成功后由系统恢复对应告警。" type="info" :closable="false" show-icon />
-          <el-table :data="alerts" v-loading="tableLoading" stripe><el-table-column prop="category" label="类别" width="160" /><el-table-column prop="summary" label="摘要" min-width="290" /><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.status === 'RESOLVED' ? 'success' : row.status === 'OPEN' ? 'danger' : 'warning'" size="small">{{ row.status === 'RESOLVED' ? '已恢复' : row.status === 'OPEN' ? '待处理' : '已读未恢复' }}</el-tag></template></el-table-column><el-table-column prop="occurrenceCount" label="累计次数" width="90" /><el-table-column label="最近发现" width="185"><template #default="{ row }">{{ formatTime(row.lastSeenAt) }}</template></el-table-column><el-table-column label="操作" width="150"><template #default="{ row }"><el-button v-if="row.runId" link type="primary" @click="selectedRun = row.runId">关联运行</el-button><el-button v-if="row.status === 'OPEN'" link :disabled="!overview?.managementEnabled" @click="acknowledge(row.id)">已读</el-button></template></el-table-column></el-table>
+          <el-alert title="此处显示 SRM 业务告警。XXL-JOB 调度告警及通知配置请到 Admin 查看。已读状态表示有人确认收到告警。" type="info" :closable="false" show-icon />
+          <el-table :data="alerts" v-loading="tableLoading" stripe><el-table-column label="数据流" width="105"><template #default="{ row }">{{ syncJobLabel(row.jobCode) }}</template></el-table-column><el-table-column prop="category" label="类别" width="160" /><el-table-column prop="summary" label="摘要" min-width="290" /><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.status === 'RESOLVED' ? 'success' : row.status === 'OPEN' ? 'danger' : 'warning'" size="small">{{ row.status === 'RESOLVED' ? '已恢复' : row.status === 'OPEN' ? '待处理' : '已读未恢复' }}</el-tag></template></el-table-column><el-table-column prop="occurrenceCount" label="累计次数" width="90" /><el-table-column label="最近发现" width="185"><template #default="{ row }">{{ formatTime(row.lastSeenAt) }}</template></el-table-column><el-table-column label="操作" width="150"><template #default="{ row }"><el-button v-if="row.runId" link type="primary" @click="selectedRun = row.runId">关联运行</el-button><el-button v-if="row.status === 'OPEN'" link :disabled="!overview?.managementEnabled" @click="acknowledge(row.id)">已读</el-button></template></el-table-column></el-table>
           <el-pagination class="pagination" v-model:current-page="alertPage" :page-size="20" :total="alertTotal" layout="total, prev, pager, next" @current-change="loadAlerts" />
         </el-tab-pane>
         <el-tab-pane v-if="overview?.mockEnabled" label="SAP 源端模拟（开发）" name="source"><MockSapPanel v-if="tab === 'source'" :can-manage="!!overview?.managementEnabled" :settle-delay-seconds="overview?.settleDelaySeconds ?? 120" :overlap-seconds="overview?.overlapSeconds ?? 300" @changed="refreshOverview" /></el-tab-pane>
       </el-tabs>
     </section>
-    <footer class="page-footnote">{{ overview?.mockEnabled ? '当前为本地 SAP 模拟环境' : '当前使用配置的外围数据接口' }} · TIME_WINDOW_V2 · 当前状态最终收敛 · 超出延迟边界由全量对账兜底</footer>
-    <RunDetailDrawer :run-id="selectedRun" :can-manage="!!overview?.managementEnabled" @close="selectedRun = null" @changed="refresh" />
+    <footer class="page-footnote">{{ overview?.mockEnabled ? '当前为本地 SAP 模拟环境' : '当前使用配置的外围数据接口' }} · 超出重叠回扫范围的变化由对账发现</footer>
+    <RunDetailDrawer :run-id="selectedRun" :can-manage="!!overview?.managementEnabled" :purchase-order-checkpoint="purchaseOrderJob?.committedCursor" :admin-url="adminUrl" @close="selectedRun = null" @changed="refresh" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, OfficeBuilding, Money, ArrowDown } from '@element-plus/icons-vue'
+import { Search, OfficeBuilding, Money, ArrowDown, Document } from '@element-plus/icons-vue'
 import { integrationApi } from '@/api/integration'
 import type { Overview, JobDefinition, DataType, RunMode, TargetRecord, SyncRun, SyncAlert, SyncCheckpoint } from '@/types/integration'
-import { formatTime, statusLabel, statusTone, modeLabel, isActiveRun } from '@/types/integration'
+import { formatTime, statusLabel, statusTone, modeLabel, isActiveRun, isPurchaseOrderJob, syncJobLabel } from '@/types/integration'
 import { safeXxlAdminUrl } from '@/utils/xxlJobDisplay'
 import MockSapPanel from './MockSapPanel.vue'
 import RunDetailDrawer from './RunDetailDrawer.vue'
-import { parseCheckpoint, checkpointCursor, checkpointLag } from './checkpointDisplay'
+import { parseCheckpoint, checkpointCursor, checkpointLag, parsePurchaseOrderCheckpoint, purchaseOrderCursor } from './checkpointDisplay'
 
 const overview = ref<Overview | null>(null), loading = ref(false), loadFailed = ref(false), tableLoading = ref(false)
 const tab = ref('data'), dataType = ref<DataType>('COST_CENTER'), keyword = ref('')
@@ -85,6 +110,14 @@ const alerts = ref<SyncAlert[]>([]), alertPage = ref(1), alertTotal = ref(0)
 const selectedRun = ref<string | null>(null), triggering = ref<string | null>(null)
 const pendingRequests = new Map<string, { key: string; reason: string }>()
 const adminUrl = computed(() => safeXxlAdminUrl(overview.value?.xxlAdminUrl))
+const purchaseOrderJob = computed(() => overview.value?.jobs.find(job => isPurchaseOrderJob(job.jobCode)))
+const orderCheckpoint = computed(() => parsePurchaseOrderCheckpoint(purchaseOrderJob.value?.committedCursor))
+const orderedJobs = computed(() => {
+  const jobs = overview.value?.jobs ?? []
+  return purchaseOrderJob.value
+    ? [purchaseOrderJob.value, ...jobs.filter(job => !isPurchaseOrderJob(job.jobCode))]
+    : jobs
+})
 let disposed = false
 let dataGeneration = 0
 let overviewGeneration = 0
@@ -99,10 +132,11 @@ async function refreshOverview() {
   const data = await integrationApi.overview()
   if (disposed || generation !== overviewGeneration) return
   overview.value = data
-  const results = await Promise.allSettled(data.jobs.map(job => integrationApi.checkpoint(job.jobCode)))
+  const legacyJobs = data.jobs.filter(job => !isPurchaseOrderJob(job.jobCode))
+  const results = await Promise.allSettled(legacyJobs.map(job => integrationApi.checkpoint(job.jobCode)))
   if (disposed || generation !== overviewGeneration) return
   const next: Record<string, SyncCheckpoint> = {}
-  results.forEach((result, index) => { const job = data.jobs[index]; if (job && result.status === 'fulfilled') next[job.jobCode] = result.value })
+  results.forEach((result, index) => { const job = legacyJobs[index]; if (job && result.status === 'fulfilled') next[job.jobCode] = result.value })
   checkpoints.value = next
 }
 async function loadRecords() {
@@ -129,7 +163,7 @@ function changeDataType() { dataPage.value = 1; records.value = []; changeTab() 
 function searchRecords() { dataPage.value = 1; changeTab() }
 function openScheduler() { if (adminUrl.value) window.open(adminUrl.value, '_blank', 'noopener,noreferrer') }
 async function trigger(job: JobDefinition, mode: RunMode) {
-  if (triggering.value) return
+  if (triggering.value || isPurchaseOrderJob(job.jobCode)) return
   const action = `${job.jobCode}:${mode}`
   triggering.value = action
   try {
@@ -158,6 +192,7 @@ async function toggleJob(job: JobDefinition, enabled: boolean) {
   try { await integrationApi.enable(job.jobCode, enabled); await refreshOverview(); ElMessage.success(enabled ? '业务执行已启用；Cron仍由XXL-JOB管理' : '业务执行已停用；当前运行不受影响') } catch { /* Keep confirmed server state. */ }
 }
 async function resetBaseline(job: JobDefinition) {
+  if (isPurchaseOrderJob(job.jobCode)) return
   try {
     const { value } = await ElMessageBox.prompt('将为未完成基线建立新的扫描锚点和固定 ID 上界，并提升代次；保留已落库记录。请先结束活动或等待重试的运行，并填写原因。', '重建未完成基线', { inputValidator: value => !!value?.trim() || '请填写原因' })
     await integrationApi.resetBaseline(job.jobCode, value); await refresh(); ElMessage.success('未完成基线已重置，请执行首次全量同步')

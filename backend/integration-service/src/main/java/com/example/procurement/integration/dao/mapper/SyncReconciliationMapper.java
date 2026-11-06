@@ -11,6 +11,8 @@ public interface SyncReconciliationMapper {
             @Param("businessKey") String businessKey,@Param("updatedAt") Instant updatedAt,@Param("hash") String hash);
     int insertDifference(SyncDifferenceDO difference);
     int updateDifference(SyncDifferenceDO difference);
+    int resolveOrderDifferences(@Param("jobCode") String jobCode, @Param("sourceId") long sourceId,
+            @Param("repairRunId") UUID repairRunId, @Param("applied") boolean applied);
     Instant firstAbsence(@Param("jobCode") String jobCode,@Param("sourceId") long sourceId);
     Instant databaseNow();
     List<Long> idsWithAbsence(@Param("jobCode") String jobCode, @Param("ids") List<Long> ids);

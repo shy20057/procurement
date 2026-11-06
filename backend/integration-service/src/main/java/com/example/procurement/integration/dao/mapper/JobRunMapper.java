@@ -17,6 +17,8 @@ JobRunDO selectById(@Param("runId") UUID runId);
     List<ClaimableRunDTO> lockLocalCandidates();
     ClaimableRunDTO lockExactCandidate(@Param("runId") UUID runId);
     List<ClaimableRunDTO> lockStaleRuns();
+    List<ClaimableRunDTO> lockStalePurchaseOrderRuns(@Param("jobCode") String jobCode,
+            @Param("pendingSeconds") int pendingSeconds);
     int insert(JobRunDO run);
     int markRunning(@Param("runId") UUID runId, @Param("owner") String owner,
             @Param("token") long token, @Param("attempt") int attempt);

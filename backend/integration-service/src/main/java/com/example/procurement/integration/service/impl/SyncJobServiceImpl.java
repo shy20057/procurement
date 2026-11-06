@@ -66,7 +66,9 @@ public class SyncJobServiceImpl implements SyncJobService {
     /* 幂等提交：同一个 request_id 返回原运行，不重复创建任务。   本质上就是改数据库*/
     @Override
     public UUID submit(String jobCode, String mode, String requestId, String reason, String trigger, UUID parent) {
-        MasterDataType.forJob(jobCode); // 任务校验
+        if (MasterDataType.forJob(jobCode) == MasterDataType.PURCHASE_ORDER) {
+            throw problem("XXL_ONLY", "采购订单请在 XXL-JOB Admin 触发", 409);
+        }
         validateRequest(mode, requestId, reason); // 提交参数校验
         String fingerprint=fingerprint(jobCode,mode,reason,trigger,parent);
         return tx.execute(status -> { // 开启事务
@@ -107,23 +109,30 @@ public class SyncJobServiceImpl implements SyncJobService {
 
     @Override
     public XxlSubmission submitXxl(String jobCode, String mode, XxlTriggerMetadata metadata, String requestId) {
-        MasterDataType.forJob(jobCode);
-        if(!List.of("AUTO","RECONCILE").contains(mode))throw problem("INVALID_MODE","定时任务只允许同步或只读对账",422);
+        boolean purchaseOrder = MasterDataType.forJob(jobCode) == MasterDataType.PURCHASE_ORDER;
+        boolean repair = purchaseOrder && "REPAIR".equals(mode);
+        if (!List.of("AUTO", "RECONCILE").contains(mode) && !repair)
+            throw problem("INVALID_MODE", "不支持该 XXL-JOB 运行模式", 422);
         if (metadata == null || metadata.logKey() == null || !metadata.logKey().matches("[0-9a-f]{64}")) {
             throw problem("INVALID_XXL_CONTEXT", "XXL-JOB日志键不合法", 422);
         }
         if (requestId == null || requestId.isBlank() || requestId.length() > 180) throw problem("INVALID_REQUEST", "XXL-JOB幂等键不合法", 422);
+        if (repair && (metadata.repairSourceId() == null || metadata.repairSourceId() <= 0))
+            throw problem("INVALID_REPAIR_ID", "修复需要有效的源订单 ID", 422);
+        String reason = repair ? "XXL-JOB订单修复 sourceId=" + metadata.repairSourceId() : "XXL-JOB调度触发";
         return tx.execute(status -> {
             JobDefinitionDO definition = lockDefinition(jobCode);
+            if (purchaseOrder) recoverPurchaseOrderRuns(jobCode);
             JobRunDO previous = runs.lockXxlIdentity(jobCode, metadata.jobId(), metadata.logKey(), metadata.shardIndex());
             if (previous != null) {
-                if(!mode.equals(previous.getMode()))throw problem("IDEMPOTENCY_CONFLICT","同次调度身份不能切换运行模式",409);
+                if (!mode.equals(previous.getMode()) || (repair && !reason.equals(previous.getReason())))
+                    throw problem("IDEMPOTENCY_CONFLICT", "同次调度身份不能切换模式或修复目标", 409);
                 if (List.of("SUCCEEDED", "FAILED", "CANCELLED").contains(previous.getStatus())) {
                     return XxlSubmission.terminal(previous.getRunId(), previous.getStatus(), previous.getErrorCode(), previous.getErrorSummary());
                 }
                 return XxlSubmission.busy(previous.getRunId(), "相同XXL调度请求仍在执行");
             }
-            JobRunDO run = newRun(jobCode, mode, requestId, "XXL-JOB调度触发", "XXL");
+            JobRunDO run = newRun(jobCode, mode, requestId, reason, "XXL");
             run.setXxlJobId(metadata.jobId());
             run.setXxlLogKey(metadata.logKey());
             run.setXxlShardIndex(metadata.shardIndex());
@@ -131,7 +140,7 @@ public class SyncJobServiceImpl implements SyncJobService {
             run.setExecutorAddress(metadata.executorAddress());
             runs.insert(run);
             UUID id = run.getRunId();
-            insertRequest(requestId, id, jobCode, mode, fingerprint(jobCode,mode,"XXL-JOB调度触发","XXL",null));
+            insertRequest(requestId, id, jobCode, mode, fingerprint(jobCode, mode, reason, "XXL", null));
             if (!Boolean.TRUE.equals(definition.getEnabled())) {
                 failPending(id, "JOB_DISABLED", "当前任务已被业务执行开关停用");
                 return XxlSubmission.disabled(id);
@@ -142,6 +151,23 @@ public class SyncJobServiceImpl implements SyncJobService {
             }
             return XxlSubmission.created(id);
         });
+    }
+
+    private void recoverPurchaseOrderRuns(String jobCode) {
+        for (ClaimableRunDTO run : runs.lockStalePurchaseOrderRuns(jobCode, settings.leaseSeconds)) {
+            if ("PENDING".equals(run.getStatus())) {
+                failPending(run.getRunId(), "CLAIM_TIMEOUT", "上次调度未领取，下一次调度继续");
+                continue;
+            }
+            LeaseStateDTO lease = leaseMapper.lockState(run.getResourceKey());
+            if (lease == null) continue;
+            boolean sameOwner = Objects.equals(run.getOwnerId(), lease.getOwnerId())
+                    && Objects.equals(run.getFenceToken(), lease.getFenceToken());
+            if (sameOwner && !Boolean.TRUE.equals(lease.getExpired())) continue;
+            boolean cancelled = "CANCEL_REQUESTED".equals(run.getStatus());
+            runs.recover(run.getRunId(), cancelled ? "CANCELLED" : "FAILED");
+            if (!cancelled) alerts.alert(jobCode, run.getRunId(), "SYNC_FAILURE", "采购订单执行器失联，从已提交进度恢复");
+        }
     }
 
     /* 租约机制：领取时 CAS 更新 lease_until 并递增 fence_token，多实例中只有取得租约的实例可执行。 */

@@ -9,6 +9,10 @@ import org.springframework.stereotype.Component;
  * */
 @Component
 public class XxlJobHelperRuntimeContext implements XxlRuntimeContext {
+    @Override
+    public String jobParam() {
+        return XxlJobHelper.getJobParam();
+    }
     public long jobId() {
         return XxlJobHelper.getJobId();
     }

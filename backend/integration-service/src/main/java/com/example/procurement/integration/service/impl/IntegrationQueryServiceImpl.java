@@ -14,6 +14,7 @@ import com.example.procurement.integration.dao.mapper.SyncAuditMapper;
 import com.example.procurement.integration.dao.mapper.SyncCheckpointMapper;
 import com.example.procurement.integration.dao.mapper.SyncReconciliationMapper;
 import com.example.procurement.integration.domain.enums.MasterDataType;
+import com.example.procurement.integration.purchase.PurchaseOrderCheckpoint;
 import com.example.procurement.integration.dto.resp.CostCenterRespDTO;
 import com.example.procurement.integration.dto.resp.ExchangeRateRespDTO;
 import com.example.procurement.integration.dto.resp.IntegrationOverviewRespDTO;
@@ -137,6 +138,11 @@ public class IntegrationQueryServiceImpl implements IntegrationQueryService {
     public SyncCheckpointRespDTO checkpoint(String jobCode) {
         MasterDataType type = MasterDataType.forJob(jobCode);
         SyncCheckpointDO stored = checkpoints.selectByJob(jobCode);
+        if (type == MasterDataType.PURCHASE_ORDER) {
+            boolean complete = stored != null && Boolean.TRUE.equals(stored.getBaselineComplete());
+            return SyncCheckpointRespDTO.purchaseOrder(complete,
+                    complete ? codec.read(stored.getCommittedCursor(), PurchaseOrderCheckpoint.class) : null);
+        }
         SyncCheckpoint state = stored == null || stored.getCommittedCursor() == null || stored.getCommittedCursor().isBlank()
                 ? new SyncCheckpoint("TIME_WINDOW_V2",stored==null||stored.getGeneration()==null?1:stored.getGeneration(),
                         false,null,0,0,null,null,null,null,null,null,null,0)

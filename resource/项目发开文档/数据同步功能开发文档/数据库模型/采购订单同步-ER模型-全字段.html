@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>采购订单同步 · 全字段 ER 模型</title>
+<style>
+:root { color-scheme:light; --ink:#182536; --muted:#526276; --line:#dce4ef; --blue:#2343a5; }
+* { box-sizing:border-box; }
+body { margin:0; color:var(--ink); background:white; font-family:"Segoe UI","Microsoft YaHei",sans-serif; }
+header,footer { padding:21px clamp(16px,3vw,44px); }
+header { border-bottom:1px solid var(--line); }
+h1 { font-size:clamp(22px,3vw,32px); margin:0 0 8px; }
+.summary,.legend,footer { color:var(--muted); font-size:13px; line-height:1.6; }
+.summary { margin:0; }
+.toolbar,.legend { display:flex; flex-wrap:wrap; align-items:center; gap:6px 16px; margin-top:12px; }
+.toolbar label { display:flex; align-items:center; gap:8px; min-height:42px; font-size:13px; }
+input[type=search] { width:min(225px,50vw); padding:7px 9px; border:1px solid #9cabbf; border-radius:4px; min-height:38px; }
+input[type=checkbox] { width:17px; height:17px; accent-color:var(--blue); }
+.legend { margin-bottom:0; }
+.legend strong { color:var(--blue); }
+.solid,.dashed { display:inline-block; width:22px; margin-right:5px; vertical-align:middle; border-top:2px solid #275cdd; }
+.dashed { border-top:2px dashed #697889; }
+#board { position:relative; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:32px; padding:20px clamp(28px,3vw,44px) 24px; align-items:start; }
+#wires { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.column { position:relative; min-width:0; }
+.column h2 { margin:0 0 10px; font-size:13px; color:#425369; }
+.card { --tone:#344359; border:1px solid var(--tone); background:white; margin:0 0 22px; }
+.source { --tone:#166968; } .business { --tone:#087653; } .job { --tone:#2140a1; }
+.progress { --tone:#5c27b0; } .alert { --tone:#984409; }
+.card h3 { margin:0; }
+button { font:inherit; cursor:pointer; }
+.card-title { background:var(--tone); color:white; border:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 9px; text-align:left; padding:8px 9px; width:100%; min-height:38px; }
+.card-title span { overflow-wrap:anywhere; font-size:13px; font-weight:700; }
+.card-title small { font-size:11px; font-weight:600; }
+.card-title:hover { filter:brightness(1.15); }
+table { width:100%; border-collapse:collapse; font:12px/1.45 "Cascadia Mono",Consolas,"Microsoft YaHei",monospace; }
+td,th { padding:4px 7px; border-bottom:1px solid var(--line); vertical-align:baseline; }
+tr:last-child td,tr:last-child th { border-bottom:0; }
+th { font-weight:400; text-align:left; overflow-wrap:anywhere; }
+td { text-align:right; white-space:nowrap; color:#3e516b; }
+tr:nth-child(even) { background:#f7f9fc; }
+tr:hover { background:#edf4ff; }
+tr.match { background:#fff1c7; }
+.flags { display:inline-flex; gap:2px; margin-right:4px; }
+.flags:empty { display:none; }
+.flag { background:#e9edf8; color:#254283; font-size:9px; padding:1px 3px; border-radius:2px; font-weight:700; }
+.flag.fk { background:#dce9ff; color:#1645a8; }
+.nullable { color:#59697c; margin-left:4px; }
+.field { color:#193c83; background:transparent; border:0; padding:0; text-align:left; text-decoration:underline dotted; text-underline-offset:3px; overflow-wrap:anywhere; }
+:focus-visible { outline:2px solid #2866d6; outline-offset:2px; }
+.card-title:focus-visible { outline:2px solid white; outline-offset:-4px; }
+footer { border-top:1px solid var(--line); }
+footer a { color:var(--blue); }
+#empty { margin:24px 44px; }
+dialog { width:min(650px,calc(100vw - 30px)); max-height:80vh; border:1px solid #8c9bb3; border-top:5px solid var(--blue); padding:20px 22px; color:var(--ink); }
+dialog::backdrop { background:#15243d70; }
+dialog h2 { margin:0 0 7px; overflow-wrap:anywhere; font-size:20px; }
+dialog p,dialog ul { line-height:1.65; overflow-wrap:anywhere; }
+dialog h3 { font-size:15px; }
+dialog form { text-align:right; }
+dialog button { border:1px solid var(--blue); padding:6px 14px; background:white; color:var(--blue); min-height:40px; }
+.sr-only { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+[hidden] { display:none !important; }
+@media(max-width:1250px) { #board { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:680px) { #board { grid-template-columns:minmax(0,1fr); padding-left:14px; padding-right:30px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>采购订单同步 · 全字段 ER 模型</h1>
+  <p class="summary">15 张表 / 187 个字段 · 新增 2 张，复用 13 张 · 图内 4 条实际外键</p>
+  <div class="toolbar">
+    <label>查表或字段 <input id="search" type="search" placeholder="例如 source_id"></label>
+    <label><input type="checkbox" id="logical"> 显示应用层关联</label>
+    <span id="results" class="summary" role="status"></span>
+  </div>
+  <p class="legend">
+    <span><strong>PK</strong> 主键</span><span><strong>FK</strong> 实际外键</span><span><strong>UK</strong> 单列唯一</span>
+    <span><strong>U*</strong> 联合唯一键成员</span><span><strong>?</strong> 可空</span>
+    <span><i class="solid"></i>数据库外键</span><span><i class="dashed"></i>应用层关联</span>
+  </p>
+</header>
+<main>
+  <p id="empty" hidden>没有找到匹配的表或字段。请尝试订单、游标字段名或表名。</p>
+  <div id="board">
+    <canvas id="wires" aria-hidden="true"></canvas>
+      <section class="column" aria-label="配置与进度">
+        <h2>配置与进度</h2>
+        <article class="card job" id="job_definition" data-table="job_definition" data-title="任务定义">
+          <h3><button class="card-title" type="button" data-detail="job_definition"><span>job_definition</span><small>任务定义</small></button></h3>
+          <table aria-label="job_definition 任务定义"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="job_code"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><button type="button" class="field" data-detail="job_definition" data-column="job_code">job_code</button></th><td>varchar(80)</td></tr>
+            <tr data-field="entity_type"><th scope="row"><span class="flags"><span class="flag ">UK</span></span><span>entity_type</span></th><td>varchar(30)</td></tr>
+            <tr data-field="name"><th scope="row"><span class="flags"></span><span>name</span></th><td>varchar(100)</td></tr>
+            <tr data-field="enabled"><th scope="row"><span class="flags"></span><span>enabled</span></th><td>boolean</td></tr>
+            <tr data-field="cron_expression"><th scope="row"><span class="flags"></span><span>cron_expression</span></th><td>varchar(100)</td></tr>
+            <tr data-field="zone_id"><th scope="row"><span class="flags"></span><span>zone_id</span></th><td>varchar(40)</td></tr>
+            <tr data-field="handler_code"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_definition" data-column="handler_code">handler_code</button></th><td>varchar(100)</td></tr>
+            <tr data-field="resource_key"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_definition" data-column="resource_key">resource_key</button></th><td>varchar(100)</td></tr>
+            <tr data-field="sync_mode"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_definition" data-column="sync_mode">sync_mode</button></th><td>varchar(30)</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card progress" id="sync_checkpoint" data-table="sync_checkpoint" data-title="同步检查点">
+          <h3><button class="card-title" type="button" data-detail="sync_checkpoint"><span>sync_checkpoint</span><small>同步检查点</small></button></h3>
+          <table aria-label="sync_checkpoint 同步检查点"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="job_code"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><button type="button" class="field" data-detail="sync_checkpoint" data-column="job_code">job_code</button></th><td>varchar(80)</td></tr>
+            <tr data-field="committed_cursor"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_checkpoint" data-column="committed_cursor">committed_cursor</button><span class="nullable" aria-label="可空">?</span></th><td>text</td></tr>
+            <tr data-field="baseline_complete"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_checkpoint" data-column="baseline_complete">baseline_complete</button></th><td>boolean</td></tr>
+            <tr data-field="last_success_at"><th scope="row"><span class="flags"></span><span>last_success_at</span><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+            <tr data-field="version"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_checkpoint" data-column="version">version</button></th><td>bigint</td></tr>
+            <tr data-field="generation"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_checkpoint" data-column="generation">generation</button></th><td>bigint</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card progress" id="job_lease" data-table="job_lease" data-title="资源租约">
+          <h3><button class="card-title" type="button" data-detail="job_lease"><span>job_lease</span><small>资源租约</small></button></h3>
+          <table aria-label="job_lease 资源租约"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="resource_key"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><button type="button" class="field" data-detail="job_lease" data-column="resource_key">resource_key</button></th><td>varchar(80)</td></tr>
+            <tr data-field="owner_id"><th scope="row"><span class="flags"></span><span>owner_id</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(100)</td></tr>
+            <tr data-field="fence_token"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_lease" data-column="fence_token">fence_token</button></th><td>bigint</td></tr>
+            <tr data-field="lease_until"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_lease" data-column="lease_until">lease_until</button></th><td>timestamptz</td></tr>
+            <tr data-field="heartbeat_at"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_lease" data-column="heartbeat_at">heartbeat_at</button><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card audit" id="management_audit" data-table="management_audit" data-title="管理操作审计">
+          <h3><button class="card-title" type="button" data-detail="management_audit"><span>management_audit</span><small>管理操作审计</small></button></h3>
+          <table aria-label="management_audit 管理操作审计"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><span>id</span></th><td>uuid</td></tr>
+            <tr data-field="job_code"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="management_audit" data-column="job_code">job_code</button></th><td>varchar(80)</td></tr>
+            <tr data-field="operation"><th scope="row"><span class="flags"></span><span>operation</span></th><td>varchar(60)</td></tr>
+            <tr data-field="reason"><th scope="row"><span class="flags"></span><span>reason</span></th><td>varchar(500)</td></tr>
+            <tr data-field="created_at"><th scope="row"><span class="flags"></span><span>created_at</span></th><td>timestamptz</td></tr>
+            <tr data-field="actor"><th scope="row"><span class="flags"></span><span>actor</span></th><td>varchar(100)</td></tr>
+          </tbody></table>
+        </article>
+      </section>
+      <section class="column" aria-label="运行与请求">
+        <h2>运行与请求</h2>
+        <article class="card job" id="job_run" data-table="job_run" data-title="任务运行">
+          <h3><button class="card-title" type="button" data-detail="job_run"><span>job_run</span><small>任务运行</small></button></h3>
+          <table aria-label="job_run 任务运行"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="run_id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><button type="button" class="field" data-detail="job_run" data-column="run_id">run_id</button></th><td>uuid</td></tr>
+            <tr data-field="job_code"><th scope="row"><span class="flags"><span class="flag ">U*</span><span class="flag fk">FK</span></span><button type="button" class="field" data-detail="job_run" data-column="job_code">job_code</button></th><td>varchar(80)</td></tr>
+            <tr data-field="mode"><th scope="row"><span class="flags"></span><span>mode</span></th><td>varchar(20)</td></tr>
+            <tr data-field="trigger_type"><th scope="row"><span class="flags"></span><span>trigger_type</span></th><td>varchar(20)</td></tr>
+            <tr data-field="parent_run_id"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_run" data-column="parent_run_id">parent_run_id</button><span class="nullable" aria-label="可空">?</span></th><td>uuid</td></tr>
+            <tr data-field="request_id"><th scope="row"><span class="flags"><span class="flag ">UK</span></span><button type="button" class="field" data-detail="job_run" data-column="request_id">request_id</button></th><td>varchar(180)</td></tr>
+            <tr data-field="reason"><th scope="row"><span class="flags"></span><span>reason</span></th><td>varchar(500)</td></tr>
+            <tr data-field="status"><th scope="row"><span class="flags"></span><span>status</span></th><td>varchar(30)</td></tr>
+            <tr data-field="attempt_no"><th scope="row"><span class="flags"></span><span>attempt_no</span></th><td>int</td></tr>
+            <tr data-field="next_retry_at"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_run" data-column="next_retry_at">next_retry_at</button><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+            <tr data-field="owner_id"><th scope="row"><span class="flags"></span><span>owner_id</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(100)</td></tr>
+            <tr data-field="fence_token"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_run" data-column="fence_token">fence_token</button><span class="nullable" aria-label="可空">?</span></th><td>bigint</td></tr>
+            <tr data-field="phase"><th scope="row"><span class="flags"></span><span>phase</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(30)</td></tr>
+            <tr data-field="fetched_count"><th scope="row"><span class="flags"></span><span>fetched_count</span></th><td>bigint</td></tr>
+            <tr data-field="applied_count"><th scope="row"><span class="flags"></span><span>applied_count</span></th><td>bigint</td></tr>
+            <tr data-field="ignored_count"><th scope="row"><span class="flags"></span><span>ignored_count</span></th><td>bigint</td></tr>
+            <tr data-field="total_count"><th scope="row"><span class="flags"></span><span>total_count</span></th><td>bigint</td></tr>
+            <tr data-field="error_code"><th scope="row"><span class="flags"></span><span>error_code</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(60)</td></tr>
+            <tr data-field="error_summary"><th scope="row"><span class="flags"></span><span>error_summary</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(500)</td></tr>
+            <tr data-field="started_at"><th scope="row"><span class="flags"></span><span>started_at</span><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+            <tr data-field="finished_at"><th scope="row"><span class="flags"></span><span>finished_at</span><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+            <tr data-field="created_at"><th scope="row"><span class="flags"></span><span>created_at</span></th><td>timestamptz</td></tr>
+            <tr data-field="xxl_job_id"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><span>xxl_job_id</span><span class="nullable" aria-label="可空">?</span></th><td>bigint</td></tr>
+            <tr data-field="xxl_log_key"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><button type="button" class="field" data-detail="job_run" data-column="xxl_log_key">xxl_log_key</button><span class="nullable" aria-label="可空">?</span></th><td>varchar(64)</td></tr>
+            <tr data-field="xxl_shard_index"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><span>xxl_shard_index</span><span class="nullable" aria-label="可空">?</span></th><td>int</td></tr>
+            <tr data-field="xxl_shard_total"><th scope="row"><span class="flags"></span><span>xxl_shard_total</span><span class="nullable" aria-label="可空">?</span></th><td>int</td></tr>
+            <tr data-field="executor_address"><th scope="row"><span class="flags"></span><span>executor_address</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(255)</td></tr>
+            <tr data-field="scan_context"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_run" data-column="scan_context">scan_context</button><span class="nullable" aria-label="可空">?</span></th><td>text</td></tr>
+            <tr data-field="window_id"><th scope="row"><span class="flags"></span><span>window_id</span><span class="nullable" aria-label="可空">?</span></th><td>uuid</td></tr>
+            <tr data-field="target_watermark"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_run" data-column="target_watermark">target_watermark</button><span class="nullable" aria-label="可空">?</span></th><td>timestamptz(6)</td></tr>
+            <tr data-field="caught_up"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_run" data-column="caught_up">caught_up</button></th><td>boolean</td></tr>
+            <tr data-field="checkpoint_generation"><th scope="row"><span class="flags"></span><span>checkpoint_generation</span></th><td>bigint</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card job" id="job_request_key" data-table="job_request_key" data-title="请求幂等键">
+          <h3><button class="card-title" type="button" data-detail="job_request_key"><span>job_request_key</span><small>请求幂等键</small></button></h3>
+          <table aria-label="job_request_key 请求幂等键"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="request_id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><button type="button" class="field" data-detail="job_request_key" data-column="request_id">request_id</button></th><td>varchar(180)</td></tr>
+            <tr data-field="run_id"><th scope="row"><span class="flags"><span class="flag fk">FK</span></span><button type="button" class="field" data-detail="job_request_key" data-column="run_id">run_id</button></th><td>uuid</td></tr>
+            <tr data-field="job_code"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_request_key" data-column="job_code">job_code</button></th><td>varchar(80)</td></tr>
+            <tr data-field="mode"><th scope="row"><span class="flags"></span><span>mode</span></th><td>varchar(20)</td></tr>
+            <tr data-field="request_fingerprint"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="job_request_key" data-column="request_fingerprint">request_fingerprint</button><span class="nullable" aria-label="可空">?</span></th><td>varchar(64)</td></tr>
+          </tbody></table>
+        </article>
+      </section>
+      <section class="column" aria-label="同步审计与对账">
+        <h2>同步审计与对账</h2>
+        <article class="card audit" id="sync_page_audit" data-table="sync_page_audit" data-title="成功页审计">
+          <h3><button class="card-title" type="button" data-detail="sync_page_audit"><span>sync_page_audit</span><small>成功页审计</small></button></h3>
+          <table aria-label="sync_page_audit 成功页审计"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><span>id</span></th><td>bigint</td></tr>
+            <tr data-field="run_id"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><button type="button" class="field" data-detail="sync_page_audit" data-column="run_id">run_id</button></th><td>uuid</td></tr>
+            <tr data-field="page_no"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><span>page_no</span></th><td>int</td></tr>
+            <tr data-field="phase"><th scope="row"><span class="flags"></span><span>phase</span></th><td>varchar(30)</td></tr>
+            <tr data-field="from_cursor"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_page_audit" data-column="from_cursor">from_cursor</button><span class="nullable" aria-label="可空">?</span></th><td>text</td></tr>
+            <tr data-field="to_cursor"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_page_audit" data-column="to_cursor">to_cursor</button><span class="nullable" aria-label="可空">?</span></th><td>text</td></tr>
+            <tr data-field="fetched_count"><th scope="row"><span class="flags"></span><span>fetched_count</span></th><td>int</td></tr>
+            <tr data-field="applied_count"><th scope="row"><span class="flags"></span><span>applied_count</span></th><td>int</td></tr>
+            <tr data-field="ignored_count"><th scope="row"><span class="flags"></span><span>ignored_count</span></th><td>int</td></tr>
+            <tr data-field="committed_at"><th scope="row"><span class="flags"></span><span>committed_at</span></th><td>timestamptz</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card audit" id="sync_page_failure" data-table="sync_page_failure" data-title="失败页记录">
+          <h3><button class="card-title" type="button" data-detail="sync_page_failure"><span>sync_page_failure</span><small>失败页记录</small></button></h3>
+          <table aria-label="sync_page_failure 失败页记录"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><span>id</span></th><td>bigint</td></tr>
+            <tr data-field="run_id"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_page_failure" data-column="run_id">run_id</button></th><td>uuid</td></tr>
+            <tr data-field="attempt_no"><th scope="row"><span class="flags"></span><span>attempt_no</span></th><td>int</td></tr>
+            <tr data-field="from_cursor"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_page_failure" data-column="from_cursor">from_cursor</button><span class="nullable" aria-label="可空">?</span></th><td>text</td></tr>
+            <tr data-field="error_code"><th scope="row"><span class="flags"></span><span>error_code</span></th><td>varchar(60)</td></tr>
+            <tr data-field="error_summary"><th scope="row"><span class="flags"></span><span>error_summary</span></th><td>varchar(500)</td></tr>
+            <tr data-field="occurred_at"><th scope="row"><span class="flags"></span><span>occurred_at</span></th><td>timestamptz</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card alert" id="sync_alert" data-table="sync_alert" data-title="同步告警">
+          <h3><button class="card-title" type="button" data-detail="sync_alert"><span>sync_alert</span><small>同步告警</small></button></h3>
+          <table aria-label="sync_alert 同步告警"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><span>id</span></th><td>bigint</td></tr>
+            <tr data-field="job_code"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_alert" data-column="job_code">job_code</button></th><td>varchar(80)</td></tr>
+            <tr data-field="run_id"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_alert" data-column="run_id">run_id</button><span class="nullable" aria-label="可空">?</span></th><td>uuid</td></tr>
+            <tr data-field="category"><th scope="row"><span class="flags"></span><span>category</span></th><td>varchar(60)</td></tr>
+            <tr data-field="severity"><th scope="row"><span class="flags"></span><span>severity</span></th><td>varchar(20)</td></tr>
+            <tr data-field="dedup_key"><th scope="row"><span class="flags"><span class="flag ">UK</span></span><button type="button" class="field" data-detail="sync_alert" data-column="dedup_key">dedup_key</button></th><td>varchar(180)</td></tr>
+            <tr data-field="first_seen_at"><th scope="row"><span class="flags"></span><span>first_seen_at</span></th><td>timestamptz</td></tr>
+            <tr data-field="last_seen_at"><th scope="row"><span class="flags"></span><span>last_seen_at</span></th><td>timestamptz</td></tr>
+            <tr data-field="occurrence_count"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_alert" data-column="occurrence_count">occurrence_count</button></th><td>bigint</td></tr>
+            <tr data-field="status"><th scope="row"><span class="flags"></span><span>status</span></th><td>varchar(20)</td></tr>
+            <tr data-field="summary"><th scope="row"><span class="flags"></span><span>summary</span></th><td>varchar(500)</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card audit" id="sync_reconciliation_seen" data-table="sync_reconciliation_seen" data-title="对账已见记录">
+          <h3><button class="card-title" type="button" data-detail="sync_reconciliation_seen"><span>sync_reconciliation_seen</span><small>对账已见记录</small></button></h3>
+          <table aria-label="sync_reconciliation_seen 对账已见记录"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="run_id"><th scope="row"><span class="flags"><span class="flag ">PK</span><span class="flag ">U*</span></span><button type="button" class="field" data-detail="sync_reconciliation_seen" data-column="run_id">run_id</button></th><td>uuid</td></tr>
+            <tr data-field="business_key"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><button type="button" class="field" data-detail="sync_reconciliation_seen" data-column="business_key">business_key</button></th><td>varchar(240)</td></tr>
+            <tr data-field="source_id"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><button type="button" class="field" data-detail="sync_reconciliation_seen" data-column="source_id">source_id</button></th><td>bigint</td></tr>
+            <tr data-field="source_updated_at"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_reconciliation_seen" data-column="source_updated_at">source_updated_at</button></th><td>timestamptz(6)</td></tr>
+            <tr data-field="source_hash"><th scope="row"><span class="flags"></span><span>source_hash</span></th><td>char(64)</td></tr>
+            <tr data-field="observed_at"><th scope="row"><span class="flags"></span><span>observed_at</span></th><td>timestamptz</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card audit" id="sync_reconciliation_diff" data-table="sync_reconciliation_diff" data-title="对账差异">
+          <h3><button class="card-title" type="button" data-detail="sync_reconciliation_diff"><span>sync_reconciliation_diff</span><small>对账差异</small></button></h3>
+          <table aria-label="sync_reconciliation_diff 对账差异"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><span>id</span></th><td>bigint</td></tr>
+            <tr data-field="run_id"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><button type="button" class="field" data-detail="sync_reconciliation_diff" data-column="run_id">run_id</button></th><td>uuid</td></tr>
+            <tr data-field="business_key"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><button type="button" class="field" data-detail="sync_reconciliation_diff" data-column="business_key">business_key</button></th><td>varchar(240)</td></tr>
+            <tr data-field="difference_type"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_reconciliation_diff" data-column="difference_type">difference_type</button></th><td>varchar(30)</td></tr>
+            <tr data-field="repaired"><th scope="row"><span class="flags"></span><span>repaired</span></th><td>boolean</td></tr>
+            <tr data-field="created_at"><th scope="row"><span class="flags"></span><span>created_at</span></th><td>timestamptz</td></tr>
+            <tr data-field="source_id"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_reconciliation_diff" data-column="source_id">source_id</button><span class="nullable" aria-label="可空">?</span></th><td>bigint</td></tr>
+            <tr data-field="source_updated_at"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_reconciliation_diff" data-column="source_updated_at">source_updated_at</button><span class="nullable" aria-label="可空">?</span></th><td>timestamptz(6)</td></tr>
+            <tr data-field="target_updated_at"><th scope="row"><span class="flags"></span><span>target_updated_at</span><span class="nullable" aria-label="可空">?</span></th><td>timestamptz(6)</td></tr>
+            <tr data-field="source_hash"><th scope="row"><span class="flags"></span><span>source_hash</span><span class="nullable" aria-label="可空">?</span></th><td>char(64)</td></tr>
+            <tr data-field="target_hash"><th scope="row"><span class="flags"></span><span>target_hash</span><span class="nullable" aria-label="可空">?</span></th><td>char(64)</td></tr>
+            <tr data-field="verification_status"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_reconciliation_diff" data-column="verification_status">verification_status</button></th><td>varchar(30)</td></tr>
+            <tr data-field="repair_status"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="sync_reconciliation_diff" data-column="repair_status">repair_status</button></th><td>varchar(40)</td></tr>
+            <tr data-field="detail"><th scope="row"><span class="flags"></span><span>detail</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(1000)</td></tr>
+            <tr data-field="verified_at"><th scope="row"><span class="flags"></span><span>verified_at</span><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+            <tr data-field="repaired_at"><th scope="row"><span class="flags"></span><span>repaired_at</span><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+          </tbody></table>
+        </article>
+      </section>
+      <section class="column" aria-label="ERP 与 SRM 订单">
+        <h2>ERP 与 SRM 订单</h2>
+        <article class="card source" id="mock_purchase_order" data-table="mock_sap_schema.purchase_order" data-title="ERP 采购订单头">
+          <h3><button class="card-title" type="button" data-detail="mock_purchase_order"><span>purchase_order</span><small>ERP 采购订单头</small></button></h3>
+          <table aria-label="ERP 采购订单头"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><button type="button" class="field" data-detail="mock_purchase_order" data-column="id">id</button></th><td>bigint</td></tr>
+            <tr data-field="order_no"><th scope="row"><span class="flags"><span class="flag ">UK</span></span><button type="button" class="field" data-detail="mock_purchase_order" data-column="order_no">order_no</button></th><td>varchar(40)</td></tr>
+            <tr data-field="title"><th scope="row"><span class="flags"></span><span>title</span></th><td>varchar(200)</td></tr>
+            <tr data-field="supplier_code"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="mock_purchase_order" data-column="supplier_code">supplier_code</button></th><td>varchar(40)</td></tr>
+            <tr data-field="purchasing_org"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="mock_purchase_order" data-column="purchasing_org">purchasing_org</button></th><td>varchar(32)</td></tr>
+            <tr data-field="order_date"><th scope="row"><span class="flags"></span><span>order_date</span></th><td>date</td></tr>
+            <tr data-field="currency"><th scope="row"><span class="flags"></span><span>currency</span></th><td>varchar(8)</td></tr>
+            <tr data-field="publication_status"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="mock_purchase_order" data-column="publication_status">publication_status</button></th><td>varchar(16)</td></tr>
+            <tr data-field="published_updated_at"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="mock_purchase_order" data-column="published_updated_at">published_updated_at</button></th><td>timestamptz(6)</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card source" id="mock_purchase_order_line" data-table="mock_sap_schema.purchase_order_line" data-title="ERP 采购订单行">
+          <h3><button class="card-title" type="button" data-detail="mock_purchase_order_line"><span>purchase_order_line</span><small>ERP 采购订单行</small></button></h3>
+          <table aria-label="ERP 采购订单行"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="order_id"><th scope="row"><span class="flags"><span class="flag ">PK</span><span class="flag fk">FK</span></span><button type="button" class="field" data-detail="mock_purchase_order_line" data-column="order_id">order_id</button></th><td>bigint</td></tr>
+            <tr data-field="line_no"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><button type="button" class="field" data-detail="mock_purchase_order_line" data-column="line_no">line_no</button></th><td>varchar(16)</td></tr>
+            <tr data-field="material_code"><th scope="row"><span class="flags"></span><span>material_code</span></th><td>varchar(32)</td></tr>
+            <tr data-field="material_name"><th scope="row"><span class="flags"></span><span>material_name</span></th><td>varchar(200)</td></tr>
+            <tr data-field="quantity"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="mock_purchase_order_line" data-column="quantity">quantity</button></th><td>numeric(19,4)</td></tr>
+            <tr data-field="unit"><th scope="row"><span class="flags"></span><span>unit</span></th><td>varchar(16)</td></tr>
+            <tr data-field="unit_price"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="mock_purchase_order_line" data-column="unit_price">unit_price</button></th><td>numeric(19,4)</td></tr>
+            <tr data-field="amount"><th scope="row"><span class="flags"></span><span>amount</span></th><td>numeric(19,4)</td></tr>
+            <tr data-field="required_date"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="mock_purchase_order_line" data-column="required_date">required_date</button></th><td>date</td></tr>
+            <tr data-field="line_status"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="mock_purchase_order_line" data-column="line_status">line_status</button></th><td>varchar(16)</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card business" id="purchase_order" data-table="procurement_schema.purchase_order" data-title="SRM 采购订单头">
+          <h3><button class="card-title" type="button" data-detail="purchase_order"><span>purchase_order</span><small>SRM 采购订单头</small></button></h3>
+          <table aria-label="SRM 采购订单头"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><span>id</span></th><td>uuid</td></tr>
+            <tr data-field="po_no"><th scope="row"><span class="flags"><span class="flag ">UK</span></span><button type="button" class="field" data-detail="purchase_order" data-column="po_no">po_no</button></th><td>varchar(32)</td></tr>
+            <tr data-field="title"><th scope="row"><span class="flags"></span><span>title</span></th><td>varchar(200)</td></tr>
+            <tr data-field="pr_id"><th scope="row"><span class="flags"><span class="flag fk">FK</span></span><span>pr_id</span><span class="nullable" aria-label="可空">?</span></th><td>uuid</td></tr>
+            <tr data-field="pr_no"><th scope="row"><span class="flags"></span><span>pr_no</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(32)</td></tr>
+            <tr data-field="supplier_id"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="purchase_order" data-column="supplier_id">supplier_id</button></th><td>uuid</td></tr>
+            <tr data-field="supplier_no"><th scope="row"><span class="flags"></span><span>supplier_no</span></th><td>varchar(32)</td></tr>
+            <tr data-field="supplier_name"><th scope="row"><span class="flags"></span><span>supplier_name</span></th><td>varchar(200)</td></tr>
+            <tr data-field="buyer_id"><th scope="row"><span class="flags"></span><span>buyer_id</span><span class="nullable" aria-label="可空">?</span></th><td>uuid</td></tr>
+            <tr data-field="buyer_name"><th scope="row"><span class="flags"></span><span>buyer_name</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(100)</td></tr>
+            <tr data-field="org_id"><th scope="row"><span class="flags"></span><span>org_id</span><span class="nullable" aria-label="可空">?</span></th><td>uuid</td></tr>
+            <tr data-field="org_name"><th scope="row"><span class="flags"></span><span>org_name</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(200)</td></tr>
+            <tr data-field="contract_no"><th scope="row"><span class="flags"></span><span>contract_no</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(64)</td></tr>
+            <tr data-field="currency"><th scope="row"><span class="flags"></span><span>currency</span></th><td>varchar(8)</td></tr>
+            <tr data-field="total_amount"><th scope="row"><span class="flags"></span><span>total_amount</span></th><td>numeric(19,4)</td></tr>
+            <tr data-field="status"><th scope="row"><span class="flags"></span><span>status</span></th><td>varchar(32)</td></tr>
+            <tr data-field="order_date"><th scope="row"><span class="flags"></span><span>order_date</span></th><td>date</td></tr>
+            <tr data-field="expected_date"><th scope="row"><span class="flags"></span><span>expected_date</span><span class="nullable" aria-label="可空">?</span></th><td>date</td></tr>
+            <tr data-field="delivery_address"><th scope="row"><span class="flags"></span><span>delivery_address</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(500)</td></tr>
+            <tr data-field="payment_terms"><th scope="row"><span class="flags"></span><span>payment_terms</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(200)</td></tr>
+            <tr data-field="approved_by"><th scope="row"><span class="flags"></span><span>approved_by</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(100)</td></tr>
+            <tr data-field="approved_at"><th scope="row"><span class="flags"></span><span>approved_at</span><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+            <tr data-field="sent_at"><th scope="row"><span class="flags"></span><span>sent_at</span><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+            <tr data-field="acknowledged_at"><th scope="row"><span class="flags"></span><span>acknowledged_at</span><span class="nullable" aria-label="可空">?</span></th><td>timestamptz</td></tr>
+            <tr data-field="version"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="purchase_order" data-column="version">version</button></th><td>bigint</td></tr>
+            <tr data-field="created_at"><th scope="row"><span class="flags"></span><span>created_at</span></th><td>timestamptz</td></tr>
+            <tr data-field="updated_at"><th scope="row"><span class="flags"></span><span>updated_at</span></th><td>timestamptz</td></tr>
+            <tr data-field="source_system"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><span>source_system</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(32)</td></tr>
+            <tr data-field="source_id"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><button type="button" class="field" data-detail="purchase_order" data-column="source_id">source_id</button><span class="nullable" aria-label="可空">?</span></th><td>bigint</td></tr>
+            <tr data-field="source_order_no"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><button type="button" class="field" data-detail="purchase_order" data-column="source_order_no">source_order_no</button><span class="nullable" aria-label="可空">?</span></th><td>varchar(40)</td></tr>
+            <tr data-field="source_supplier_code"><th scope="row"><button type="button" class="field" data-detail="purchase_order" data-column="source_supplier_code">source_supplier_code</button><span class="nullable" aria-label="可空">?</span></th><td>varchar(40)</td></tr>
+            <tr data-field="source_purchasing_org"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="purchase_order" data-column="source_purchasing_org">source_purchasing_org</button><span class="nullable" aria-label="可空">?</span></th><td>varchar(32)</td></tr>
+            <tr data-field="source_updated_at"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="purchase_order" data-column="source_updated_at">source_updated_at</button><span class="nullable" aria-label="可空">?</span></th><td>timestamptz(6)</td></tr>
+            <tr data-field="source_publication_status"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="purchase_order" data-column="source_publication_status">source_publication_status</button><span class="nullable" aria-label="可空">?</span></th><td>varchar(16)</td></tr>
+            <tr data-field="source_payload_hash"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="purchase_order" data-column="source_payload_hash">source_payload_hash</button><span class="nullable" aria-label="可空">?</span></th><td>char(64)</td></tr>
+            <tr data-field="synced_at"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="purchase_order" data-column="synced_at">synced_at</button><span class="nullable" aria-label="可空">?</span></th><td>timestamptz(6)</td></tr>
+          </tbody></table>
+        </article>
+        <article class="card business" id="po_line" data-table="procurement_schema.po_line" data-title="SRM 采购订单行">
+          <h3><button class="card-title" type="button" data-detail="po_line"><span>po_line</span><small>SRM 采购订单行</small></button></h3>
+          <table aria-label="SRM 采购订单行"><thead class="sr-only"><tr><th>字段</th><th>类型</th></tr></thead><tbody>
+            <tr data-field="id"><th scope="row"><span class="flags"><span class="flag ">PK</span></span><span>id</span></th><td>uuid</td></tr>
+            <tr data-field="po_id"><th scope="row"><span class="flags"><span class="flag ">U*</span><span class="flag fk">FK</span></span><button type="button" class="field" data-detail="po_line" data-column="po_id">po_id</button></th><td>uuid</td></tr>
+            <tr data-field="line_no"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="po_line" data-column="line_no">line_no</button></th><td>integer</td></tr>
+            <tr data-field="material_id"><th scope="row"><span class="flags"></span><span>material_id</span><span class="nullable" aria-label="可空">?</span></th><td>uuid</td></tr>
+            <tr data-field="material_no"><th scope="row"><span class="flags"></span><span>material_no</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(32)</td></tr>
+            <tr data-field="material_name"><th scope="row"><span class="flags"></span><span>material_name</span></th><td>varchar(200)</td></tr>
+            <tr data-field="specification"><th scope="row"><span class="flags"></span><span>specification</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(500)</td></tr>
+            <tr data-field="unit"><th scope="row"><span class="flags"></span><span>unit</span></th><td>varchar(16)</td></tr>
+            <tr data-field="quantity"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="po_line" data-column="quantity">quantity</button></th><td>numeric(19,4)</td></tr>
+            <tr data-field="unit_price"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="po_line" data-column="unit_price">unit_price</button></th><td>numeric(19,4)</td></tr>
+            <tr data-field="amount"><th scope="row"><span class="flags"></span><span>amount</span></th><td>numeric(19,4)</td></tr>
+            <tr data-field="received_quantity"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="po_line" data-column="received_quantity">received_quantity</button></th><td>numeric(19,4)</td></tr>
+            <tr data-field="required_date"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="po_line" data-column="required_date">required_date</button><span class="nullable" aria-label="可空">?</span></th><td>date</td></tr>
+            <tr data-field="remarks"><th scope="row"><span class="flags"></span><span>remarks</span><span class="nullable" aria-label="可空">?</span></th><td>varchar(500)</td></tr>
+            <tr data-field="version"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="po_line" data-column="version">version</button></th><td>bigint</td></tr>
+            <tr data-field="created_at"><th scope="row"><span class="flags"></span><span>created_at</span></th><td>timestamptz</td></tr>
+            <tr data-field="updated_at"><th scope="row"><span class="flags"></span><span>updated_at</span></th><td>timestamptz</td></tr>
+            <tr data-field="source_line_no"><th scope="row"><span class="flags"><span class="flag ">U*</span></span><button type="button" class="field" data-detail="po_line" data-column="source_line_no">source_line_no</button><span class="nullable" aria-label="可空">?</span></th><td>varchar(16)</td></tr>
+            <tr data-field="line_status"><th scope="row"><span class="flags"></span><button type="button" class="field" data-detail="po_line" data-column="line_status">line_status</button></th><td>varchar(16)</td></tr>
+          </tbody></table>
+        </article>
+      </section>
+  </div>
+</main>
+<footer>点击表头查看约束和关联，点击带下划线的字段查看用途。核心表统计不含只读依赖的供应商档案、XXL-JOB 平台表和 Flyway 迁移历史。 <a href="../SAP ERP 采购订单同步至 SRM — 需求与详细设计.md">查看需求与详设</a></footer>
+<dialog id="detail" aria-labelledby="detail-title">
+  <form method="dialog"><button type="submit">关闭</button></form>
+  <h2 id="detail-title"></h2>
+  <div id="detail-body"></div>
+</dialog>
+<script>
+const tables = {"sync_checkpoint":{"schema":"integration_schema","keys":[["PK",["job_code"]]]},"sync_page_audit":{"schema":"integration_schema","keys":[["PK",["id"]],["U*",["run_id","page_no"]]]},"sync_page_failure":{"schema":"integration_schema","keys":[["PK",["id"]]]},"sync_alert":{"schema":"integration_schema","keys":[["PK",["id"]],["UK",["dedup_key"]]]},"sync_reconciliation_seen":{"schema":"integration_schema","keys":[["PK",["run_id","business_key"]],["U*",["run_id","source_id"]]]},"sync_reconciliation_diff":{"schema":"integration_schema","keys":[["PK",["id"]],["U*",["run_id","business_key"]]]},"job_definition":{"schema":"integration_schema","keys":[["PK",["job_code"]],["UK",["entity_type"]]]},"job_run":{"schema":"integration_schema","keys":[["PK",["run_id"]],["UK",["request_id"]],["U*",["job_code","xxl_job_id","xxl_log_key","xxl_shard_index"],"部分唯一索引，条件为 xxl_log_key IS NOT NULL"]]},"job_request_key":{"schema":"integration_schema","keys":[["PK",["request_id"]]]},"management_audit":{"schema":"integration_schema","keys":[["PK",["id"]]]},"job_lease":{"schema":"integration_schema","keys":[["PK",["resource_key"]]]},"purchase_order":{"schema":"procurement_schema","name":"purchase_order","keys":[["PK",["id"]],["UK",["po_no"]],["U*",["source_system","source_id"],"仅外部订单"],["U*",["source_system","source_order_no"],"仅外部订单"]],"external":[["pr_id","procurement_schema.purchase_requisition.id"]]},"po_line":{"schema":"procurement_schema","name":"po_line","keys":[["PK",["id"]],["U*",["po_id","source_line_no"],"仅外部订单行"]]},"mock_purchase_order":{"schema":"mock_sap_schema","name":"purchase_order","keys":[["PK",["id"]],["UK",["order_no"]]]},"mock_purchase_order_line":{"schema":"mock_sap_schema","name":"purchase_order_line","keys":[["PK",["order_id","line_no"]]]}};
+const relations = [{"from":"job_definition","fromField":"job_code","to":"job_run","toField":"job_code","kind":"fk","label":"job_code"},{"from":"job_run","fromField":"run_id","to":"job_request_key","toField":"run_id","kind":"fk","label":"run_id"},{"from":"job_definition","fromField":"job_code","to":"sync_checkpoint","toField":"job_code","label":"检查点","kind":"logical"},{"from":"job_definition","fromField":"resource_key","to":"job_lease","toField":"resource_key","label":"执行租约","kind":"logical"},{"from":"job_definition","fromField":"job_code","to":"management_audit","toField":"job_code","label":"管理审计","kind":"logical"},{"from":"job_run","fromField":"run_id","to":"sync_page_audit","toField":"run_id","label":"成功页","kind":"logical"},{"from":"job_run","fromField":"run_id","to":"sync_page_failure","toField":"run_id","label":"失败页","kind":"logical"},{"from":"job_run","fromField":"run_id","to":"sync_alert","toField":"run_id","label":"告警","kind":"logical"},{"from":"job_run","fromField":"run_id","to":"sync_reconciliation_seen","toField":"run_id","label":"源端观察","kind":"logical"},{"from":"job_run","fromField":"run_id","to":"sync_reconciliation_diff","toField":"run_id","label":"差异","kind":"logical"},{"from":"purchase_order","fromField":"id","to":"po_line","toField":"po_id","kind":"fk","label":"po_id"},{"from":"mock_purchase_order","fromField":"id","to":"mock_purchase_order_line","toField":"order_id","kind":"fk","label":"order_id"},{"from":"mock_purchase_order","fromField":"id","to":"purchase_order","toField":"source_id","kind":"logical","label":"源订单"}];
+const notes = {"lines":"完整订单明细的 JSONB 数组，每行含行号、物料、数量、单位、单价、要求交期和行状态。","source_id":"ERP 订单的源端记录 ID。在 SRM 与 source_system 组合识别同一张源订单。","order_no":"ERP 业务订单号，按字符串保存以保留前导零。","supplier_code":"源系统供应商编码。门户权限通过服务端绑定校验。","purchasing_org":"ERP 采购组织。首版单流同步，后续可以作为独立分区的候选维度。","publication_status":"ERP 对外发布状态。PUBLISHED 可确认；WITHDRAWN 和 CANCELLED 保留记录并关闭确认。","source_updated_at":"源端发布版本时间。SRM 用于新旧版本比较；反馈与该时间和快照哈希一起绑定。","snapshot_hash":"规范化订单头与明细的 SHA-256。用于判定内容一致性和保护供应商确认版本。","synced_at":"SRM 将订单写入本地的时间。可与源端发布时间对照观察同步延迟。","order_id":"引用 SRM 订单头的本地 ID。","line_no":"订单内的业务行号，与 order_id 共同唯一。按字符串保存以保留前导零。","line_status":"ACTIVE 表示有效行，CANCELLED 表示取消行。取消行保留用于展示。","quantity":"采购数量，要求大于 0。","unit_price":"订单行单价，使用定点十进制类型。","required_date":"采购方要求的到货日期。","auth_issuer":"身份签发方，与 auth_subject 一起标识经过认证的登录主体。","auth_subject":"身份系统内的稳定主体 ID。与签发方、源系统、供应商编码共同形成绑定。","decision":"供应商对当前订单版本的决定，CONFIRMED 为确认，DISPUTED 为异议。","comment":"反馈说明。提出异议时必填。","actor_issuer":"提交反馈的身份签发方。","actor_subject":"提交反馈的登录主体。","submitted_at":"供应商提交反馈的时间。","job_code":"同步任务编码。采购订单任务为 SAP_PURCHASE_ORDER_DELTA。","handler_code":"执行器注册的任务处理入口。","resource_key":"同一订单数据流共用的资源键，定时同步、手动补拉和修复通过它互斥。","sync_mode":"用于区分任务所采用的同步协议。","committed_cursor":"增量进度 JSON 只有 completedWatermark、windowEndAt 和 pageCursor 三项。页游标随页写入，完整窗口结束才推进水位。","baseline_complete":"首次全量基线是否处理完成。","version":"检查点修订号，用于标识记录状态变化。","generation":"基线代次，用来区分重建前后的进度。","run_id":"标识一次同步、对账或修复执行，便于串联状态、审计和差异。","parent_run_id":"人工补偿运行所关联的原运行 ID。","fence_token":"围栏令牌。执行权重新授予后推进，旧持有者不能继续提交。","lease_until":"资源执行权的到期时间。","heartbeat_at":"执行实例最近一次续约的时间。","request_id":"请求幂等键。重复提交时关联同一运行。","request_fingerprint":"提交参数的摘要，用于拒绝同键不同参数。","xxl_log_key":"参与标识一次 XXL-JOB 调度投递，和任务、调度 ID、分片号共同去重。","next_retry_at":"本地执行器允许再次领取该任务的时间。","scan_context":"本次扫描的独立上下文，例如对账扫描位置。","target_watermark":"本次运行计划推进到的目标水位。","caught_up":"本次自动同步是否已追上安全水位。","from_cursor":"开始处理当前页时的游标或检查点。","to_cursor":"该成功页提交后的游标或检查点。","business_key":"对账时的业务标识，与 run_id 一起标识本轮对应记录。","difference_type":"记录缺单、版本差异或内容差异等类型。","verification_status":"记录差异是否已复核及复核结果。","repair_status":"记录差异是否请求修复、执行进度和结果。","dedup_key":"告警聚合键，同类问题重现时增加计数。","occurrence_count":"该告警累计发生次数。","mock_purchase_order.id":"ERP 源端订单头 ID。与发布变更时间一起作为增量游标。","published_updated_at":"ERP 有效发布、明细发布变更、撤回或取消时更新；与源端订单头 ID 组成游标。","source_order_no":"ERP 业务订单号，用于业务追查。SRM 的 po_no 是本地唯一编号。","source_purchasing_org":"ERP 采购组织，保留源端编码。","source_line_no":"源端原始行号。与 po_id 组成外部订单行唯一键，并保留前导零。","po_id":"引用 SRM 现有采购订单头的本地 UUID。","source_publication_status":"ERP 对外发布状态。下游可根据它判断订单是否可用。","source_payload_hash":"规范化 ERP 业务内容的 SHA-256；用于对账和识别同一版本内容冲突。","source_supplier_code":"ERP 的供应商编码。首版用它查询 SRM 既有供应商档案。","supplier_id":"本地供应商 UUID。ERP 编码通过映射解析；门户按登录账号绑定的本地供应商判断归属。","po_no":"SRM 全局唯一订单号。外部订单首导时分配 EXT 前缀的本地编号。","received_quantity":"SRM 业务维护的已收货量，ERP 发布同步不得覆盖。"};
+const labels = {"job_run":"任务运行","job_request_key":"请求幂等键","job_definition":"任务定义","sync_checkpoint":"同步检查点","job_lease":"资源租约","management_audit":"管理操作审计","sync_page_audit":"成功页审计","sync_page_failure":"失败页记录","sync_alert":"同步告警","sync_reconciliation_seen":"对账已见记录","sync_reconciliation_diff":"对账差异","mock_purchase_order":"ERP 采购订单头","mock_purchase_order_line":"ERP 采购订单行","purchase_order":"SRM 采购订单头","po_line":"SRM 采购订单行"};
+const board = document.querySelector("#board");
+const canvas = document.querySelector("#wires");
+const search = document.querySelector("#search");
+const logical = document.querySelector("#logical");
+const dialog = document.querySelector("#detail");
+const cards = [...document.querySelectorAll(".card")];
+const sections = [...document.querySelectorAll(".column")];
+
+function drawConnections() {
+  const bounds = board.getBoundingClientRect();
+  if (!bounds.width || !bounds.height) return;
+  const ratio = Math.min(devicePixelRatio || 1, 2);
+  canvas.width = Math.round(bounds.width * ratio);
+  canvas.height = Math.round(bounds.height * ratio);
+  const pen = canvas.getContext("2d");
+  if (!pen) return;
+  pen.scale(ratio, ratio);
+  for (const [index, relation] of relations.entries()) {
+    if (relation.kind === "logical" && !logical.checked) continue;
+    const from = document.getElementById(relation.from);
+    const to = document.getElementById(relation.to);
+    if (from.hidden || to.hidden) continue;
+    const a = from.getBoundingClientRect();
+    const b = to.getBoundingClientRect();
+    const aRow = from.querySelector('[data-field="' + relation.fromField + '"]').getBoundingClientRect();
+    const bRow = to.querySelector('[data-field="' + relation.toField + '"]').getBoundingClientRect();
+    const sameColumn = Math.abs(a.left - b.left) < 2;
+    const forward = a.left < b.left;
+    const x1 = (sameColumn || forward ? a.right : a.left) - bounds.left;
+    const x2 = (sameColumn || !forward ? b.right : b.left) - bounds.left;
+    const y1 = aRow.top + aRow.height / 2 - bounds.top;
+    const y2 = bRow.top + bRow.height / 2 - bounds.top;
+    const gutter = sameColumn ? Math.max(x1, x2) + 8 + (index % 4) * 5 : (x1 + x2) / 2;
+    pen.strokeStyle = relation.kind === "fk" ? "#275cdd" : "#718196";
+    pen.lineWidth = relation.kind === "fk" ? 1.5 : 1;
+    pen.setLineDash(relation.kind === "fk" ? [] : [4, 4]);
+    pen.beginPath();
+    pen.moveTo(x1, y1);
+    pen.lineTo(gutter, y1);
+    pen.lineTo(gutter, y2);
+    pen.lineTo(x2, y2);
+    pen.stroke();
+    if (relation.kind === "fk") {
+      const direction = gutter > x2 ? 1 : -1;
+      pen.beginPath();
+      pen.moveTo(x2, y2 - 4);
+      pen.lineTo(x2 + direction * 8, y2);
+      pen.lineTo(x2, y2 + 4);
+      pen.stroke();
+    }
+  }
+}
+
+function filterTables() {
+  const query = search.value.trim().toLowerCase();
+  let visible = 0;
+  for (const card of cards) {
+    const tableMatch = (card.dataset.table + " " + card.dataset.title).toLowerCase().includes(query);
+    let fieldMatch = false;
+    for (const row of card.querySelectorAll("[data-field]")) {
+      const match = query !== "" && row.dataset.field.includes(query);
+      row.classList.toggle("match", match);
+      fieldMatch ||= match;
+    }
+    card.hidden = !tableMatch && !fieldMatch;
+    if (!card.hidden) visible += 1;
+  }
+  for (const section of sections) section.hidden = !section.querySelector(".card:not([hidden])");
+  document.querySelector("#results").textContent = query ? "匹配 " + visible + " 张表" : "";
+  document.querySelector("#empty").hidden = visible !== 0;
+  board.hidden = visible === 0;
+  requestAnimationFrame(drawConnections);
+}
+
+function addText(parent, tag, text) {
+  const element = document.createElement(tag);
+  element.textContent = text;
+  parent.append(element);
+  return element;
+}
+
+function addList(parent, title, items) {
+  if (!items.length) return;
+  addText(parent, "h3", title);
+  const list = document.createElement("ul");
+  for (const item of items) addText(list, "li", item);
+  parent.append(list);
+}
+
+board.addEventListener("click", event => {
+  const control = event.target.closest("button[data-detail]");
+  if (!control) return;
+  const name = control.dataset.detail;
+  const field = control.dataset.column;
+  const table = tables[name];
+  document.querySelector("#detail-title").textContent = field || labels[name];
+  const body = document.querySelector("#detail-body");
+  body.replaceChildren();
+  addText(body, "p", table.schema + "." + (table.name || name) + (field ? "." + field : ""));
+  if (field) addText(body, "p", notes[name + "." + field] || notes[field]);
+  addList(body, "键约束", table.keys.filter(([, fields]) => !field || fields.includes(field))
+    .map(([kind, fields, comment]) => (kind === "U*" ? "联合唯一" : kind) + " (" + fields.join(", ") + ")" + (comment ? " · " + comment : "")));
+  addList(body, "指向图外的实际外键", (table.external || []).filter(([column]) => !field || column === field).map(([column, target]) => column + " → " + target));
+  addList(body, "关联", relations.filter(relation =>
+    (relation.from === name && (!field || relation.fromField === field)) ||
+    (relation.to === name && (!field || relation.toField === field)))
+    .map(relation => (relation.kind === "fk" ? "实际外键" : "应用关联") + " · " +
+      tables[relation.from].schema + "." + (tables[relation.from].name || relation.from) + "." + relation.fromField + " → " + tables[relation.to].schema + "." + (tables[relation.to].name || relation.to) + "." + relation.toField));
+  dialog.showModal();
+});
+
+search.addEventListener("input", filterTables);
+logical.addEventListener("change", drawConnections);
+if ("ResizeObserver" in window) new ResizeObserver(drawConnections).observe(board);
+else addEventListener("resize", drawConnections);
+requestAnimationFrame(drawConnections);
+</script>
+</body>
+</html>

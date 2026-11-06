@@ -16,21 +16,32 @@
   <select id="lockLocalCandidates" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
     select r.*,d.resource_key from integration_schema.job_run r
     join integration_schema.job_definition d using(job_code)
-    where d.enabled=true and r.trigger_type&lt;&gt;'XXL'
+    where d.enabled=true and r.trigger_type&lt;&gt;'XXL' and d.entity_type&lt;&gt;'PURCHASE_ORDER'
       and (r.status='PENDING' or (r.status='RETRY_WAIT' and r.next_retry_at&lt;=clock_timestamp()))
     order by r.created_at limit 20 for update of r skip locked
   </select>
   <select id="lockExactCandidate" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
     select r.*,d.resource_key,d.enabled from integration_schema.job_run r
-    join integration_schema.job_definition d using(job_code) where r.run_id=#{runId} for update of r,d
+    join integration_schema.job_definition d using(job_code) where r.run_id=#{runId} for update of r
   </select>
   <select id="lockStaleRuns" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
     select r.*,d.resource_key from integration_schema.job_run r
     join integration_schema.job_definition d using(job_code)
     join integration_schema.job_lease l on l.resource_key=d.resource_key
-    where r.status in ('RUNNING','CANCEL_REQUESTED') and
+    where d.entity_type&lt;&gt;'PURCHASE_ORDER' and r.status in ('RUNNING','CANCEL_REQUESTED') and
       (l.lease_until&lt;clock_timestamp() or r.owner_id is distinct from l.owner_id
        or r.fence_token is distinct from l.fence_token) for update of r skip locked
+  </select>
+  <select id="lockStalePurchaseOrderRuns" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
+    select r.*,d.resource_key from integration_schema.job_run r
+    join integration_schema.job_definition d using(job_code)
+    join integration_schema.job_lease l on l.resource_key=d.resource_key
+    where r.job_code=#{jobCode} and r.trigger_type='XXL' and (
+      (r.status='PENDING' and r.created_at&lt;clock_timestamp()-(#{pendingSeconds} * interval '1 second'))
+      or (r.status in ('RUNNING','CANCEL_REQUESTED') and
+        (l.lease_until&lt;=clock_timestamp() or r.owner_id is distinct from l.owner_id
+         or r.fence_token is distinct from l.fence_token))
+    ) for update of r skip locked
   </select>
   <insert id="insert" parameterType="com.example.procurement.integration.dao.entity.JobRunDO">
     insert into integration_schema.job_run(run_id,job_code,mode,trigger_type,parent_run_id,request_id,reason,status,

@@ -24,6 +24,17 @@
       verified_at=clock_timestamp(),
       repaired_at=case when #{repaired} then clock_timestamp() else repaired_at end where id=#{id} and run_id=#{runId}
   </update>
+  <update id="resolveOrderDifferences">
+    update integration_schema.sync_reconciliation_diff d
+    set verification_status=case when #{applied} then 'CONFIRMED' else 'RESOLVED_BY_RECHECK' end,
+        repair_status=case when #{applied} then 'REPAIRED' else 'NOT_REQUESTED' end,
+        repaired=#{applied},verified_at=clock_timestamp(),
+        repaired_at=case when #{applied} then clock_timestamp() else d.repaired_at end
+    from integration_schema.job_run r
+    where r.run_id=d.run_id and r.job_code=#{jobCode} and r.mode='RECONCILE'
+      and d.source_id=#{sourceId} and d.run_id&lt;&gt;#{repairRunId}
+      and d.repaired=false and d.verification_status&lt;&gt;'RESOLVED_BY_RECHECK'
+  </update>
   <select id="firstAbsence" resultType="java.time.Instant">
     select min(d.verified_at) from integration_schema.sync_reconciliation_diff d
     join integration_schema.job_run r on r.run_id=d.run_id
@@ -47,6 +58,7 @@
   <select id="missingIds" resultType="long">
     select t.source_id from
     <choose><when test="type == 'COST_CENTER'">integration_schema.cost_center</when>
+      <when test="type == 'PURCHASE_ORDER'">procurement_schema.purchase_order</when>
       <otherwise>integration_schema.exchange_rate</otherwise></choose> t
     where t.source_system='SAP' and t.source_id&gt;#{afterId} and t.source_id&lt;=#{maxId}
       and not exists(select 1 from integration_schema.sync_reconciliation_seen s

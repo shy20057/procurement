@@ -53,14 +53,49 @@ public class XxlMasterDataJobHandlers {
     @XxlJob("sapExchangeRateReconcileJobHandler")
     public void reconcileExchangeRates() { execute("SAP_EXCHANGE_RATE_DELTA","RECONCILE"); }
 
+    @XxlJob("sapPurchaseOrderSyncJobHandler")
+    public void purchaseOrders() {
+        execute("SAP_PURCHASE_ORDER_DELTA", "AUTO");
+    }
+
+    @XxlJob("sapPurchaseOrderReconcileJobHandler")
+    public void reconcilePurchaseOrders() {
+        execute("SAP_PURCHASE_ORDER_DELTA", "RECONCILE");
+    }
+
+    @XxlJob("sapPurchaseOrderRepairJobHandler")
+    public void repairPurchaseOrder() {
+        execute("SAP_PURCHASE_ORDER_DELTA", "REPAIR");
+    }
+
     private void execute(String jobCode,String mode) {
         try {
             // 生成幂等身份
+            String logFile = runtime.jobLogFileName();
+            if ("SAP_PURCHASE_ORDER_DELTA".equals(jobCode) && logFile != null) {
+                // 同一条调度可能到达日志根目录不同的执行器；调度中心日志 ID 在文件名中。
+                logFile = logFile.replace('\\', '/');
+                logFile = logFile.substring(logFile.lastIndexOf('/') + 1);
+            }
             XxlExecutionIdentity identity = XxlExecutionIdentity.from(
-                    jobCode, runtime.jobId(), runtime.jobLogFileName(), runtime.shardIndex());
+                    jobCode, runtime.jobId(), logFile, runtime.shardIndex());
             // 组装触发元数据
-            XxlTriggerMetadata metadata = new XxlTriggerMetadata(
-                    runtime.jobId(), identity.logKey(), runtime.shardIndex(), runtime.shardTotal(), executorAddress);
+            Long repairSourceId = null;
+            if ("REPAIR".equals(mode)) {
+                String param = runtime.jobParam();
+                if (param == null || !param.trim().matches("[1-9][0-9]{0,18}")) {
+                    runtime.fail("采购订单修复参数必须是 ERP 源订单 ID");
+                    return;
+                }
+                try {
+                    repairSourceId = Long.valueOf(param.trim());
+                } catch (NumberFormatException invalid) {
+                    runtime.fail("ERP 源订单 ID 超出允许范围");
+                    return;
+                }
+            }
+            XxlTriggerMetadata metadata = new XxlTriggerMetadata(runtime.jobId(), identity.logKey(),
+                    runtime.shardIndex(), runtime.shardTotal(), executorAddress, repairSourceId);
             // 真正执行
             JobExecutionResult result = "AUTO".equals(mode)
                     ? coordinator.executeFromXxl(jobCode, metadata, identity.requestId())
