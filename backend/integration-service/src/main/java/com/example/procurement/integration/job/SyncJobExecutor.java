@@ -60,7 +60,7 @@ public class SyncJobExecutor {
         while (capacity.tryAcquire()) {
             JobContext context = null;
             try {
-                context = jobs.claim(node); // 从数据库领取一条PENDING/待重试的任务
+                context = jobs.claim(node); // 从数据库领取一条PENDING/RETRY_WAIT的任务（这两种任务可领取）
                 if (context == null) {
                     capacity.release(); //没有任务归还许可，退出
                     return;
