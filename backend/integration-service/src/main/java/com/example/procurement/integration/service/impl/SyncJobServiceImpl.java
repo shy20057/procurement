@@ -14,9 +14,7 @@ import com.example.procurement.integration.dao.mapper.SyncAuditMapper;
 import com.example.procurement.integration.dao.mapper.SyncCheckpointMapper;
 import com.example.procurement.integration.domain.context.JobContext;
 import com.example.procurement.integration.domain.context.XxlTriggerMetadata;
-import com.example.procurement.integration.domain.enums.MasterDataType;
-import com.example.procurement.integration.domain.enums.RetryOwner;
-import com.example.procurement.integration.domain.enums.TriggerType;
+import com.example.procurement.integration.domain.enums.SyncJobType;
 import com.example.procurement.integration.domain.result.XxlSubmission;
 import com.example.procurement.integration.dto.domain.ClaimableRunDTO;
 import com.example.procurement.integration.dto.domain.LeaseStateDTO;
@@ -25,10 +23,13 @@ import com.example.procurement.integration.service.SyncAlertService;
 import com.example.procurement.integration.service.SyncJobService;
 import com.example.procurement.integration.service.SyncLeaseService;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -63,76 +64,51 @@ public class SyncJobServiceImpl implements SyncJobService {
         this.tx = new TransactionTemplate(transactionManager);
     }
 
-    /* 幂等提交：同一个 request_id 返回原运行，不重复创建任务。   本质上就是改数据库*/
-    @Override
-    public UUID submit(String jobCode, String mode, String requestId, String reason, String trigger, UUID parent) {
-        if (MasterDataType.forJob(jobCode) == MasterDataType.PURCHASE_ORDER) {
-            throw problem("XXL_ONLY", "采购订单请在 XXL-JOB Admin 触发", 409);
-        }
-        validateRequest(mode, requestId, reason); // 提交参数校验
-        String fingerprint=fingerprint(jobCode,mode,reason,trigger,parent);
-        return tx.execute(status -> { // 开启事务
-            JobDefinitionDO definition = lockDefinition(jobCode); // 查询同步任务配置表  select * from integration_schema.job_definition where job_code=#{jobCode} for update
-            JobRequestKeyDO previous = requests.selectByRequestId(requestId); // 幂等键登记表 返回为null证明是第一次请求
-            if (previous != null) {
-                if (!jobCode.equals(previous.getJobCode()) || !mode.equals(previous.getMode())) {
-                    throw problem("IDEMPOTENCY_CONFLICT", "同一幂等键不能用于不同任务", 409);
-                }
-                if(previous.getRequestFingerprint()!=null&&!fingerprint.equals(previous.getRequestFingerprint()))
-                    throw problem("IDEMPOTENCY_CONFLICT","同一幂等键不能用于不同请求参数",409);
-                return previous.getRunId();
-            }
-            if (!Boolean.TRUE.equals(definition.getEnabled()))
-                throw problem("JOB_DISABLED", "当前任务已被业务执行开关停用", 409);
-            JobRunDO active = runs.selectActiveResource(definition.getResourceKey(), null); //  查这条数据资源上当前有没有正在占用它的任务。
-            UUID id;
-            if (active != null) {
-                if (!jobCode.equals(active.getJobCode()) || !mode.equals(active.getMode())) {
-                    throw problem("JOB_BUSY", "当前数据流已有其他模式任务运行，请稍后操作", 409);
-                }
-                id = active.getRunId();
-            } else {
-                JobRunDO run = newRun(jobCode, mode, requestId, reason, trigger); //  造一条待插入的运行记录对象 插入job_run
-                run.setParentRunId(parent);
-                runs.insert(run);
-                id = run.getRunId();
-            }
-            insertRequest(requestId, id, jobCode, mode, fingerprint);
-            return id;
-        });
-    }
-
-    @Override
-    public XxlSubmission submitXxl(String jobCode, XxlTriggerMetadata metadata, String requestId) {
-        return submitXxl(jobCode,"AUTO",metadata,requestId);
-    }
-
     @Override
     public XxlSubmission submitXxl(String jobCode, String mode, XxlTriggerMetadata metadata, String requestId) {
-        boolean purchaseOrder = MasterDataType.forJob(jobCode) == MasterDataType.PURCHASE_ORDER;
-        boolean repair = purchaseOrder && "REPAIR".equals(mode);
-        if (!List.of("AUTO", "RECONCILE").contains(mode) && !repair)
+        SyncJobType.forJob(jobCode);
+        if (!List.of("AUTO", "RECONCILE", "REPAIR").contains(mode))
             throw problem("INVALID_MODE", "不支持该 XXL-JOB 运行模式", 422);
         if (metadata == null || metadata.logKey() == null || !metadata.logKey().matches("[0-9a-f]{64}")) {
-            throw problem("INVALID_XXL_CONTEXT", "XXL-JOB日志键不合法", 422);
+            throw problem("INVALID_XXL_CONTEXT", "XXL-JOB 日志键不合法", 422);
         }
-        if (requestId == null || requestId.isBlank() || requestId.length() > 180) throw problem("INVALID_REQUEST", "XXL-JOB幂等键不合法", 422);
-        if (repair && (metadata.repairSourceId() == null || metadata.repairSourceId() <= 0))
-            throw problem("INVALID_REPAIR_ID", "修复需要有效的源订单 ID", 422);
-        String reason = repair ? "XXL-JOB订单修复 sourceId=" + metadata.repairSourceId() : "XXL-JOB调度触发";
+        if (requestId == null || requestId.isBlank() || requestId.length() > 180)
+            throw problem("INVALID_REQUEST", "XXL-JOB 幂等键不合法", 422);
+
+        var parameters = metadata.parameters();
+        boolean repair = "REPAIR".equals(mode);
+        if (repair || parameters != null) validateParameters(repair, parameters);
+        String actor = parameters == null ? "XXL-JOB" : parameters.operator().trim();
+        String reason = parameters == null ? "XXL-JOB调度触发" : parameters.reason().trim();
+        UUID parent = parameters == null ? null : parameters.retryRunId();
+        String operation = repair ? "REPAIR" : parent != null ? "RETRY" : parameters != null ? "MANUAL_TRIGGER" : "XXL_DISPATCH";
+        if (repair) {
+            reason += parameters.sourceId() != null
+                    ? " [sourceId=" + parameters.sourceId() + "]"
+                    : " [differenceId=" + parameters.differenceId() + "]";
+        }
+        String runReason = reason;
+        String fingerprint = fingerprint(jobCode, mode, runReason, parameters == null ? "XXL" : "operator:" + actor, parent);
         return tx.execute(status -> {
             JobDefinitionDO definition = lockDefinition(jobCode);
-            if (purchaseOrder) recoverPurchaseOrderRuns(jobCode);
+            recoverPurchaseOrderRuns(jobCode);
             JobRunDO previous = runs.lockXxlIdentity(jobCode, metadata.jobId(), metadata.logKey(), metadata.shardIndex());
             if (previous != null) {
-                if (!mode.equals(previous.getMode()) || (repair && !reason.equals(previous.getReason())))
-                    throw problem("IDEMPOTENCY_CONFLICT", "同次调度身份不能切换模式或修复目标", 409);
+                JobRequestKeyDO key = requests.selectByRequestId(previous.getRequestId());
+                boolean changed = !mode.equals(previous.getMode()) || !runReason.equals(previous.getReason())
+                        || !Objects.equals(parent, previous.getParentRunId());
+                if (key != null && key.getRequestFingerprint() != null) {
+                    changed |= !fingerprint.equals(key.getRequestFingerprint());
+                }
+                if (changed) throw problem("IDEMPOTENCY_CONFLICT", "同次调度不能切换模式、操作者或目标", 409);
                 if (List.of("SUCCEEDED", "FAILED", "CANCELLED").contains(previous.getStatus())) {
                     return XxlSubmission.terminal(previous.getRunId(), previous.getStatus(), previous.getErrorCode(), previous.getErrorSummary());
                 }
-                return XxlSubmission.busy(previous.getRunId(), "相同XXL调度请求仍在执行");
+                return XxlSubmission.busy(previous.getRunId(), "相同 XXL 调度请求仍在执行");
             }
-            JobRunDO run = newRun(jobCode, mode, requestId, reason, "XXL");
+            if (parent != null) requireRetryableParent(parent, jobCode, mode);
+            JobRunDO run = newRun(jobCode, mode, requestId, runReason);
+            run.setParentRunId(parent);
             run.setXxlJobId(metadata.jobId());
             run.setXxlLogKey(metadata.logKey());
             run.setXxlShardIndex(metadata.shardIndex());
@@ -140,7 +116,8 @@ public class SyncJobServiceImpl implements SyncJobService {
             run.setExecutorAddress(metadata.executorAddress());
             runs.insert(run);
             UUID id = run.getRunId();
-            insertRequest(requestId, id, jobCode, mode, fingerprint(jobCode, mode, reason, "XXL", null));
+            insertRequest(requestId, id, jobCode, mode, fingerprint);
+            audit(jobCode, id, operation, actor, runReason);
             if (!Boolean.TRUE.equals(definition.getEnabled())) {
                 failPending(id, "JOB_DISABLED", "当前任务已被业务执行开关停用");
                 return XxlSubmission.disabled(id);
@@ -151,6 +128,29 @@ public class SyncJobServiceImpl implements SyncJobService {
             }
             return XxlSubmission.created(id);
         });
+    }
+
+    private void validateParameters(boolean repair, XxlTriggerMetadata.Parameters parameters) {
+        if (parameters == null) throw problem("INVALID_REPAIR_ID", "修复需要操作者、原因以及源订单 ID 或差异 ID", 422);
+        validateActorAndReason(parameters.operator(), parameters.reason());
+        Long sourceId = parameters.sourceId();
+        Long differenceId = parameters.differenceId();
+        if (repair) {
+            if ((sourceId == null) == (differenceId == null)
+                    || (sourceId != null && sourceId <= 0) || (differenceId != null && differenceId <= 0)) {
+                throw problem("INVALID_REPAIR_ID", "修复须指定一个有效的 sourceId 或 differenceId", 422);
+            }
+        } else if (sourceId != null || differenceId != null) {
+            throw problem("INVALID_REPAIR_ID", "订单和差异 ID 仅适用于修复", 422);
+        }
+    }
+
+    private void requireRetryableParent(UUID parent, String jobCode, String mode) {
+        JobRunDO original = runs.selectById(parent);
+        if (original == null || !jobCode.equals(original.getJobCode()) || !mode.equals(original.getMode())
+                || !List.of("FAILED", "CANCELLED").contains(original.getStatus())) {
+            throw problem("NOT_RETRYABLE", "补偿须引用同任务、同模式的失败或取消运行", 409);
+        }
     }
 
     private void recoverPurchaseOrderRuns(String jobCode) {
@@ -168,18 +168,6 @@ public class SyncJobServiceImpl implements SyncJobService {
             runs.recover(run.getRunId(), cancelled ? "CANCELLED" : "FAILED");
             if (!cancelled) alerts.alert(jobCode, run.getRunId(), "SYNC_FAILURE", "采购订单执行器失联，从已提交进度恢复");
         }
-    }
-
-    /* 租约机制：领取时 CAS 更新 lease_until 并递增 fence_token，多实例中只有取得租约的实例可执行。 */
-    @Override
-    public JobContext claim(String owner) {
-        return tx.execute(status -> {
-            for (ClaimableRunDTO run : runs.lockLocalCandidates()) { // 列出「本机可以领的任务job_definition  job_run 」候选，一条一条试着抢
-                JobContext context = claimRow(run, owner);
-                if (context != null) return context;
-            }
-            return null;
-        });
     }
 
     @Override
@@ -201,8 +189,8 @@ public class SyncJobServiceImpl implements SyncJobService {
         if (token == null) return null;
         int attempt = run.getAttemptNo() + 1;
         runs.markRunning(run.getRunId(), owner, token, attempt);
-        return new JobContext(run.getRunId(), MasterDataType.forJob(run.getJobCode()), run.getMode(),
-                TriggerType.fromDatabase(run.getTriggerType()), run.getResourceKey(), owner, token, attempt);
+        return new JobContext(run.getRunId(), SyncJobType.forJob(run.getJobCode()), run.getMode(),
+                run.getResourceKey(), owner, token, attempt);
     }
 
     @Override
@@ -222,12 +210,12 @@ public class SyncJobServiceImpl implements SyncJobService {
         });
     }
 
-    /* 重试与退避：人工任务保留本地指数退避，XXL任务直接失败，由 XXL 负责后续尝试。 */
     @Override
-    public void failure(JobContext context, IntegrationProblem error, RetryOwner retryOwner) {
+    public void failure(JobContext context, IntegrationProblem error) {
         leases.fenced(context, () -> {
+            String jobCode = context.type().jobCode;
             String summary = truncate(error.getMessage());
-            SyncCheckpointDO checkpoint = checkpoints.selectByJob(context.type().jobCode);
+            SyncCheckpointDO checkpoint = checkpoints.selectByJob(jobCode);
             SyncPageFailureDO failure = new SyncPageFailureDO();
             failure.setRunId(context.runId());
             failure.setAttemptNo(context.attempt());
@@ -235,64 +223,39 @@ public class SyncJobServiceImpl implements SyncJobService {
             failure.setErrorCode(error.code);
             failure.setErrorSummary(summary);
             audits.insertFailure(failure);
-            boolean retry = retryOwner == RetryOwner.LOCAL && error.retryable && context.attempt() < settings.maxAttempts;
-            long delay = Math.min(300, 30L << Math.min(4, context.attempt() - 1));
-            delay += ThreadLocalRandom.current().nextLong(Math.max(1, delay / 5));
-            runs.markFailure(context.runId(), retry ? "RETRY_WAIT" : "FAILED", error.code, summary, retry, delay);
-            if (error.code.startsWith("SOURCE_") || error.code.startsWith("CHECKPOINT_") || "INVALID_PAGE".equals(error.code))
-                alerts.alert(context.type().jobCode,context.runId(),error.code,summary);
-            if ((!retry || context.attempt() >= 3) && !"RECONCILIATION_CONFIRM_WAIT".equals(error.code))
-                alerts.alert(context.type().jobCode, context.runId(), "SYNC_FAILURE", summary);
+            runs.markFailure(context.runId(), error.code, summary);
+            if (error.code.startsWith("SOURCE_") || error.code.startsWith("CHECKPOINT_") || "INVALID_PAGE".equals(error.code)) {
+                alerts.alert(jobCode, context.runId(), error.code, summary);
+            }
+            alerts.alert(jobCode, context.runId(), "SYNC_FAILURE", summary);
             return null;
         });
     }
 
     @Override
-    public void cancel(UUID id) {
-        if (runs.cancel(id) == 0 && runs.selectById(id) == null) throw problem("NOT_FOUND", "任务不存在", 404);
-    }
-
-    @Override
     public void cancelled(JobContext context) { runs.markCancelled(context.runId(), context.ownerId(), context.token()); }
 
-    /* 失联恢复：过期、owner 变化或 token 变化都代表旧执行权失效；不修改新持有者的租约。 */
     @Override
-    public void recoverExpired() {
+    public void enable(String jobCode, boolean enabled, String operator, String reason) {
+        SyncJobType.forJob(jobCode);
+        validateActorAndReason(operator, reason);
         tx.executeWithoutResult(status -> {
-            for (ClaimableRunDTO run : runs.lockStaleRuns()) {
-                LeaseStateDTO lease = leaseMapper.lockState(run.getResourceKey());
-                if (lease == null) continue;
-                boolean changed = !Objects.equals(run.getOwnerId(), lease.getOwnerId())
-                        || !Objects.equals(run.getFenceToken(), lease.getFenceToken());
-                if (!Boolean.TRUE.equals(lease.getExpired()) && !changed) continue;
-                boolean cancelled = "CANCEL_REQUESTED".equals(run.getStatus());
-                boolean xxl = "XXL".equals(run.getTriggerType());
-                boolean exhausted = run.getAttemptNo() >= settings.maxAttempts;
-                String next = cancelled ? "CANCELLED" : (xxl || exhausted ? "FAILED" : "RETRY_WAIT");
-                runs.recover(run.getRunId(), next);
-                if ((xxl || exhausted) && !cancelled) {
-                    alerts.alert(run.getJobCode(), run.getRunId(), "SYNC_FAILURE", "实例失联，本次运行已失败并等待所属调度器重试");
-                }
-            }
+            JobDefinitionDO definition = lockDefinition(jobCode);
+            if (Boolean.valueOf(enabled).equals(definition.getEnabled())) return;
+            definitions.setEnabled(jobCode, enabled);
+            audit(jobCode, null, enabled ? "ENABLE_JOB" : "DISABLE_JOB", operator.trim(), reason.trim());
         });
     }
 
-    @Override
-    public void enable(String jobCode, boolean enabled) {
-        MasterDataType.forJob(jobCode);
-        definitions.setEnabled(jobCode, enabled);
+    private void audit(String jobCode, UUID runId, String operation, String actor, String reason) {
+        definitions.insertManagementAudit(UUID.randomUUID(), jobCode, runId, operation, actor, reason);
     }
 
-    @Override
-    public void resetIncomplete(String jobCode, String reason) {
-        MasterDataType.forJob(jobCode);
-        if (reason == null || reason.isBlank() || reason.length() > 500) throw problem("INVALID_REASON", "请填写500字以内操作原因", 422);
-        tx.executeWithoutResult(status -> {
-            lockDefinition(jobCode);
-            if (runs.countActive(jobCode) > 0) throw problem("JOB_BUSY", "请先取消活动任务再重建基线", 409);
-            if (checkpoints.resetIncomplete(jobCode) == 0) throw problem("BASELINE_ALREADY_COMPLETE", "完整基线已建立，不允许通过该入口重置正常游标", 409);
-            definitions.insertManagementAudit(UUID.randomUUID(), jobCode, reason);
-        });
+    private void validateActorAndReason(String actor, String reason) {
+        if (actor == null || actor.isBlank() || actor.length() > 100 || actor.chars().anyMatch(Character::isISOControl)
+                || reason == null || reason.isBlank() || reason.length() > 400 || reason.chars().anyMatch(Character::isISOControl)) {
+            throw problem("INVALID_AUDIT", "请提供有效操作者及 400 字以内的操作原因", 422);
+        }
     }
 
     @Override
@@ -304,10 +267,10 @@ public class SyncJobServiceImpl implements SyncJobService {
         return definition;
     }
 
-    private JobRunDO newRun(String jobCode, String mode, String requestId, String reason, String trigger) {
+    private JobRunDO newRun(String jobCode, String mode, String requestId, String reason) {
         JobRunDO run = new JobRunDO();
         run.setRunId(UUID.randomUUID()); run.setJobCode(jobCode); run.setMode(mode);
-        run.setRequestId(requestId); run.setReason(reason); run.setTriggerType(trigger);
+        run.setRequestId(requestId); run.setReason(reason); run.setTriggerType("XXL");
         return run;
     }
 
@@ -318,18 +281,13 @@ public class SyncJobServiceImpl implements SyncJobService {
         requests.insert(request);
     }
 
-    private String fingerprint(String jobCode,String mode,String reason,String trigger,UUID parent) {
+    private String fingerprint(String jobCode, String mode, String reason, String actor, UUID parent) {
         try {
-            String input=String.join(String.valueOf((char)0),jobCode,mode,reason,trigger,String.valueOf(parent));
-            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
-                    .digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        } catch(java.security.NoSuchAlgorithmException impossible) {throw new IllegalStateException(impossible);}
-    }
-
-    private void validateRequest(String mode, String requestId, String reason) {
-        if (!List.of("AUTO", "RECONCILE", "REPAIR").contains(mode)) throw problem("INVALID_MODE", "不支持的任务模式", 422);
-        if (requestId == null || requestId.isBlank() || requestId.length() > 180 || reason == null || reason.isBlank() || reason.length() > 500) {
-            throw problem("INVALID_REQUEST", "幂等键和操作原因必填且不能超长", 422);
+            String input = String.join(String.valueOf((char) 0), jobCode, mode, reason, actor, String.valueOf(parent));
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(input.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
         }
     }
 

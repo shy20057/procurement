@@ -9,5 +9,4 @@ public interface SyncCheckpointMapper {
 SyncCheckpointDO selectByJob(@Param("jobCode") String jobCode);
     int save(@Param("jobCode") String jobCode, @Param("cursor") String cursor, @Param("complete") boolean complete);
     int markSuccess(@Param("jobCode") String jobCode);
-    int resetIncomplete(@Param("jobCode") String jobCode);
 }

@@ -9,28 +9,13 @@
   </select>
   <select id="selectActiveResource" resultType="com.example.procurement.integration.dao.entity.JobRunDO">
     select r.* from integration_schema.job_run r join integration_schema.job_definition d using(job_code)
-    where d.resource_key=#{resourceKey} and r.status in ('PENDING','RUNNING','RETRY_WAIT','CANCEL_REQUESTED')
+    where d.resource_key=#{resourceKey} and r.status in ('PENDING','RUNNING','CANCEL_REQUESTED')
     <if test="excludedRun != null">and r.run_id != #{excludedRun}</if>
     order by r.created_at limit 1
-  </select>
-  <select id="lockLocalCandidates" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
-    select r.*,d.resource_key from integration_schema.job_run r
-    join integration_schema.job_definition d using(job_code)
-    where d.enabled=true and r.trigger_type&lt;&gt;'XXL' and d.entity_type&lt;&gt;'PURCHASE_ORDER'
-      and (r.status='PENDING' or (r.status='RETRY_WAIT' and r.next_retry_at&lt;=clock_timestamp()))
-    order by r.created_at limit 20 for update of r skip locked
   </select>
   <select id="lockExactCandidate" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
     select r.*,d.resource_key,d.enabled from integration_schema.job_run r
     join integration_schema.job_definition d using(job_code) where r.run_id=#{runId} for update of r
-  </select>
-  <select id="lockStaleRuns" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
-    select r.*,d.resource_key from integration_schema.job_run r
-    join integration_schema.job_definition d using(job_code)
-    join integration_schema.job_lease l on l.resource_key=d.resource_key
-    where d.entity_type&lt;&gt;'PURCHASE_ORDER' and r.status in ('RUNNING','CANCEL_REQUESTED') and
-      (l.lease_until&lt;clock_timestamp() or r.owner_id is distinct from l.owner_id
-       or r.fence_token is distinct from l.fence_token) for update of r skip locked
   </select>
   <select id="lockStalePurchaseOrderRuns" resultType="com.example.procurement.integration.dto.domain.ClaimableRunDTO">
     select r.*,d.resource_key from integration_schema.job_run r
@@ -58,18 +43,12 @@
       finished_at=clock_timestamp(),next_retry_at=null where run_id=#{runId} and status='PENDING'
   </update>
   <update id="markSuccess">
-    update integration_schema.job_run set status='SUCCEEDED',phase=case when phase='NO_SAFE_WINDOW' then phase else 'COMPLETED' end,
+    update integration_schema.job_run set status='SUCCEEDED',phase=case when phase='NO_NEW_WINDOW' then phase else 'COMPLETED' end,
       finished_at=clock_timestamp(),next_retry_at=null where run_id=#{runId}
   </update>
   <update id="markFailure">
-    update integration_schema.job_run set status=#{status},error_code=#{code},error_summary=#{summary},
-      next_retry_at=case when #{retry} then clock_timestamp()+(#{delay} * interval '1 second') else null end,
-      finished_at=case when #{retry} then null else clock_timestamp() end where run_id=#{runId}
-  </update>
-  <update id="cancel">
-    update integration_schema.job_run set status=case when status='RUNNING' then 'CANCEL_REQUESTED' else 'CANCELLED' end,
-      finished_at=case when status='RUNNING' then null else clock_timestamp() end
-    where run_id=#{runId} and status in ('PENDING','RUNNING','RETRY_WAIT')
+    update integration_schema.job_run set status='FAILED',error_code=#{code},error_summary=#{summary},
+      next_retry_at=null,finished_at=clock_timestamp() where run_id=#{runId}
   </update>
   <update id="markCancelled">
     update integration_schema.job_run set status='CANCELLED',finished_at=clock_timestamp()
@@ -77,13 +56,12 @@
   </update>
   <update id="recover">
     update integration_schema.job_run set status=#{status},
-      next_retry_at=case when #{status}='RETRY_WAIT' then clock_timestamp() else null end,
-      finished_at=case when #{status} in ('FAILED','CANCELLED') then clock_timestamp() else null end,
+      next_retry_at=null,finished_at=clock_timestamp(),
       error_code='LEASE_EXPIRED',error_summary='执行实例失联，已从最后成功页恢复' where run_id=#{runId}
   </update>
   <select id="countActive" resultType="long">
     select count(*) from integration_schema.job_run
-    where status in ('PENDING','RUNNING','RETRY_WAIT','CANCEL_REQUESTED')
+    where status in ('PENDING','RUNNING','CANCEL_REQUESTED')
     <if test="jobCode != null">and job_code=#{jobCode}</if>
   </select>
   <select id="countRuns" resultType="long">select count(*) from integration_schema.job_run
@@ -94,16 +72,13 @@
     <where><if test="jobCode != null">job_code=#{jobCode}</if></where>
     order by created_at desc limit #{size} offset #{offset}
   </select>
-  <update id="startBaseline">update integration_schema.job_run set phase='BASELINE',total_count=total_count+#{count} where run_id=#{runId}</update>
+  <update id="startPhase">update integration_schema.job_run set phase=#{phase} where run_id=#{runId}</update>
   <update id="updateProgress">
     update integration_schema.job_run set phase=#{phase},fetched_count=fetched_count+#{fetched},
       applied_count=applied_count+#{applied},ignored_count=ignored_count+#{ignored} where run_id=#{runId}
   </update>
-  <update id="updateTotal">update integration_schema.job_run set total_count=greatest(total_count,fetched_count+#{remaining}) where run_id=#{runId}</update>
-  <update id="startReconciliation">update integration_schema.job_run set fetched_count=0,applied_count=0,ignored_count=0,total_count=#{count},phase='RECONCILE' where run_id=#{runId}</update>
-  <update id="saveScanContext">update integration_schema.job_run set scan_context=#{json} where run_id=#{runId}</update>
-  <update id="bindWindow">update integration_schema.job_run set window_id=#{windowId},target_watermark=#{end},
+  <update id="bindWindow">update integration_schema.job_run set target_watermark=#{end},
     checkpoint_generation=#{generation},caught_up=false where run_id=#{runId}</update>
   <update id="completeWindow">update integration_schema.job_run set caught_up=true,phase='WINDOW_COMPLETE' where run_id=#{runId}</update>
-  <update id="noSafeWindow">update integration_schema.job_run set caught_up=false,phase='NO_SAFE_WINDOW' where run_id=#{runId}</update>
+  <update id="noNewWindow">update integration_schema.job_run set caught_up=false,phase='NO_NEW_WINDOW' where run_id=#{runId}</update>
 </mapper>

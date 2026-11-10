@@ -18,13 +18,6 @@ public class SyncAlertServiceImpl implements SyncAlertService {
     }
 
     @Override
-    public void staleAlerts() {
-        for (String code : mapper.selectStaleJobCodes()) {
-            alert(code, null, "STALE", "主数据超过约定时效，请执行同步并检查失败记录");
-        }
-    }
-
-    @Override
     public void acknowledge(long id) { mapper.acknowledge(id); }
 
     @Override

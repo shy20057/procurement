@@ -1,209 +1,213 @@
 <template>
   <div class="sync-page">
     <header class="page-heading">
-      <div><span class="eyebrow">INTEGRATION / SAP</span><h1>{{ purchaseOrderJob ? 'ERP 数据同步中心' : '主数据同步中心' }}</h1><p>按固定窗口同步外围数据，记录完整水位与每页进度。</p></div>
-      <div class="heading-actions"><span class="live-label"><i :class="{ busy: overview?.activeRunCount }" />{{ overview?.activeRunCount ? '任务运行中' : '每 5 秒刷新' }}</span><el-button @click="configureKey">管理密钥</el-button><el-button :loading="loading" @click="refresh">刷新看板</el-button></div>
+      <div><span class="eyebrow">INTEGRATION / SAP</span><h1>采购订单同步中心</h1><p>ERP 已发布订单写入 SRM，按页提交并保留同步进度。</p></div>
+      <div class="heading-actions"><el-button @click="configureKey">管理密钥</el-button><el-button :loading="loading" @click="refresh()">刷新看板</el-button></div>
     </header>
 
-    <el-alert v-if="loadFailed" class="connection-error" title="无法读取同步数据，请确认后端已重启、数据库迁移已完成，且网关已加载新的集成路由。" type="error" :closable="false" show-icon />
-    <div class="metrics">
-      <article><span>SRM 成本中心</span><strong>{{ overview?.costCenterCount ?? '—' }}<small>条</small></strong><p>已落库的业务主数据</p></article>
-      <article><span>有效期汇率记录</span><strong>{{ overview?.exchangeRateCount ?? '—' }}<small>条</small></strong><p>保留业务日期与源修改时间</p></article>
-      <article :class="{ highlighted: overview?.activeRunCount }"><span>活动任务</span><strong>{{ overview?.activeRunCount ?? '—' }}<small>个</small></strong><p>包含排队、执行与等待重试</p></article>
-      <article :class="{ warning: overview?.openAlertCount }"><span>未恢复告警</span><strong>{{ overview?.openAlertCount ?? '—' }}<small>条</small></strong><p>已读不等于故障恢复</p></article>
-    </div>
+    <el-alert v-if="loadFailed" class="connection-error" title="无法读取同步中心，请确认后端已启动且网关已加载集成路由。" type="error" :closable="false" show-icon />
+    <el-alert v-else-if="overview && !orderJob" class="connection-error" title="当前后端没有返回采购订单任务" description="请确认连接的是已完成 Integration 迁移的数据库，并重启到新版后端。" type="warning" :closable="false" show-icon />
 
     <section class="scheduler-panel">
-      <div><span class="eyebrow">DISTRIBUTED SCHEDULER</span><h2>XXL-JOB 调度中心</h2><p>负责 Cron、路由、超时与失败重试；SRM 负责幂等、租约、检查点和业务补偿。</p></div>
+      <div><span class="eyebrow">DISTRIBUTED SCHEDULER</span><h2>XXL-JOB 调度中心</h2><p>同步、失败重试、对账和修复在 Admin 触发，SRM 保存检查点和运行记录。</p></div>
       <div class="scheduler-meta"><el-tag :type="overview?.xxlEnabled ? 'success' : 'info'">{{ overview?.xxlEnabled ? '执行器已配置' : '执行器未启用' }}</el-tag><span>AppName：<code>{{ overview?.xxlExecutorAppName || '—' }}</code></span><el-button :disabled="!adminUrl" @click="openScheduler">打开 XXL-JOB 控制台</el-button></div>
     </section>
 
-    <section class="pipeline"><div><span class="step-number">01</span><strong>{{ overview?.mockEnabled ? 'SAP 模拟源' : 'SAP 外围接口' }}</strong><small>当前状态 · 源 ID + 微秒修改时间</small></div><span class="flow-arrow">→</span><div><span class="step-number">02</span><strong>固定时间窗口分页</strong><small>{{ purchaseOrderJob ? '组合游标 · 按发布变更时间' : `${overview?.pageSize ?? '—'} 条 / 页 · 组合游标` }}</small></div><span class="flow-arrow">→</span><div><span class="step-number">03</span><strong>批量幂等写入</strong><small>{{ purchaseOrderJob ? '同页提交订单头、行与检查点' : `${overview?.writeBatchSize ?? '—'} 条 / SQL · 源时间保护` }}</small></div><span class="flow-arrow">→</span><div><span class="step-number">04</span><strong>对账与异常恢复</strong><small>{{ purchaseOrderJob ? '页级回滚 · XXL-JOB 重试' : '页级回滚 · 持久化重试 · 差异复核' }}</small></div></section>
-    <el-alert v-if="purchaseOrderJob" class="connection-error" title="采购订单由 XXL-JOB 调度" :description="`增量上界取 ERP 当前时间，重叠回扫 ${overview?.overlapSeconds ?? 300} 秒。同步、重试、对账与修复均在 XXL-JOB Admin 操作。`" type="info" :closable="false" show-icon />
-    <el-alert v-else class="connection-error" :title="`安全延迟 ${overview?.settleDelaySeconds ?? 120} 秒 · 重叠回扫 ${overview?.overlapSeconds ?? 300} 秒`" description="刚保存的源端变化可能需等待所示安全延迟（默认约 2 分钟）进入安全窗口，再由同步任务拉取。完整水位只在整个窗口完成后推进；当前页游标仅代表窗口内进度。全量扫描和对账不是源端同一时点的快照。" type="info" :closable="false" show-icon />
+    <section class="pipeline">
+      <div><span class="step-number">01</span><strong>{{ overview?.mockEnabled ? '模拟 ERP' : 'ERP 发布接口' }}</strong><small>已发布订单头和完整明细</small></div><span class="flow-arrow">→</span>
+      <div><span class="step-number">02</span><strong>固定窗口分页</strong><small>发布变更时间 + 源订单 ID</small></div><span class="flow-arrow">→</span>
+      <div><span class="step-number">03</span><strong>批量幂等写入</strong><small>订单头、行和页游标同事务提交</small></div><span class="flow-arrow">→</span>
+      <div><span class="step-number">04</span><strong>重试与对账</strong><small>XXL-JOB 重试 · 已提交页续跑</small></div>
+    </section>
+    <el-alert class="connection-error" title="增量上界直接取 ERP 当前时间" :description="'重叠回扫 ' + (overview?.overlapSeconds ?? 300) + ' 秒，窗口全部处理完成后推进水位。'" type="info" :closable="false" show-icon />
 
-    <div class="job-grid" v-loading="loading && !overview">
-      <article v-for="job in orderedJobs" :key="job.jobCode" class="job-card">
-        <div class="job-top"><div class="job-title"><el-icon><component :is="job.entityType === 'PURCHASE_ORDER' ? Document : job.entityType === 'COST_CENTER' ? OfficeBuilding : Money" /></el-icon><div><h2>{{ job.name }}</h2><span class="mono">{{ job.jobCode }}</span></div></div><el-tag :type="job.baselineComplete ? 'success' : 'info'" size="small">{{ job.baselineComplete ? '基线已建立' : '待首次全量' }}</el-tag></div>
-        <dl><div><dt>最近完整同步</dt><dd>{{ formatTime(job.lastSuccessAt) }}</dd></div><div v-if="!isPurchaseOrderJob(job.jobCode)"><dt>安全窗口积压</dt><dd>{{ checkpointLag(checkpoint(job), overview?.settleDelaySeconds ?? 120) }}</dd></div><div><dt>执行计划</dt><dd><code>{{ job.cronExpression }}</code> · {{ job.zoneId }} <span v-if="!overview?.xxlEnabled">（XXL执行器未启用）</span></dd></div><div><dt>Handler</dt><dd><code>{{ job.handlerCode }}</code></dd></div><div><dt>资源租约</dt><dd><code>{{ job.resourceKey }}</code></dd></div></dl>
-        <div v-if="isPurchaseOrderJob(job.jobCode)" class="checkpoint checkpoint-grid">
-          <span>检查点</span><code>v{{ job.checkpointVersion }}</code>
-          <span>完整水位 W</span><code>{{ orderCheckpoint?.completedWatermark || '基线尚未完成' }}</code>
-          <span>活动窗口上界</span><code>{{ orderCheckpoint?.windowEndAt || '无活动窗口' }}</code>
-          <span>最后提交的页游标</span><code>{{ purchaseOrderCursor(orderCheckpoint) }}</code>
-        </div>
-        <div v-else class="checkpoint checkpoint-grid"><span>检查点 v{{ job.checkpointVersion }} · 代次 {{ checkpoint(job)?.generation ?? '—' }}</span><code>TIME_WINDOW_V2</code><span>完整水位 W</span><code>{{ checkpoint(job)?.completedWatermark || '基线尚未完成' }}</code><span>活动窗口 [S, E)</span><code>{{ checkpoint(job)?.activeWindowId ? `[${checkpoint(job)?.windowStartAt}, ${checkpoint(job)?.windowEndAt})` : '无活动窗口' }}</code><span>窗口 ID</span><code>{{ checkpoint(job)?.activeWindowId || '—' }}</code><span>当前页位置</span><code>{{ checkpointCursor(checkpoint(job)) }}</code><span>基线锚点 / 固定 ID 上界</span><code>{{ checkpoint(job)?.baselineAnchorAt || '—' }} / {{ checkpoint(job)?.baselineMaxSourceId ?? '—' }}</code><span>已提交页数 / 最近成功页</span><code>{{ checkpoint(job)?.pageSequence ?? 0 }} / {{ checkpoint(job)?.lastPageAt || '—' }}</code><span>源时间高水位</span><code>{{ checkpoint(job)?.sourceTimeHighwater || '—' }}</code></div>
-        <div class="job-bottom">
-          <template v-if="isPurchaseOrderJob(job.jobCode)">
-            <el-button type="primary" :disabled="!adminUrl" @click="openScheduler">前往 XXL-JOB Admin</el-button>
-            <span v-if="!adminUrl" class="table-hint">请先配置 Admin 地址</span>
-          </template>
+    <article v-if="orderJob" class="job-card">
+      <div class="job-top">
+        <div class="job-title"><el-icon><Document /></el-icon><div><h2>SAP 采购订单</h2><span class="mono">{{ orderJob.jobCode }}</span></div></div>
+        <el-tag :type="orderJob.baselineComplete ? 'success' : 'info'" size="small">{{ orderJob.baselineComplete ? '基线已建立' : '待首次全量' }}</el-tag>
+      </div>
+      <dl>
+        <div><dt>最近完整同步</dt><dd>{{ formatTime(orderJob.lastSuccessAt) }}</dd></div>
+        <div><dt>建议调度计划</dt><dd><code>{{ orderJob.cronExpression }}</code> · {{ orderJob.zoneId }}</dd></div>
+        <div><dt>Handler</dt><dd><code>{{ orderJob.handlerCode }}</code></dd></div>
+        <div><dt>资源租约</dt><dd><code>{{ orderJob.resourceKey }}</code></dd></div>
+      </dl>
+      <div class="checkpoint checkpoint-grid">
+        <span>检查点版本</span><code>v{{ orderJob.checkpointVersion }}</code>
+        <span>完整水位</span><code>{{ orderCheckpoint?.completedWatermark || '基线尚未完成' }}</code>
+        <span>活动窗口上界</span><code>{{ orderCheckpoint?.windowEndAt || '无活动窗口' }}</code>
+        <span>最后提交的页游标</span><code>{{ purchaseOrderCursor(orderCheckpoint) }}</code>
+      </div>
+      <div class="job-bottom">
+        <el-button type="primary" :disabled="!adminUrl" @click="openScheduler">前往 XXL-JOB Admin</el-button>
+        <el-button v-if="orderJob.latestRunId" link type="primary" @click="selectedRun = orderJob.latestRunId"><el-tag :type="statusTone(orderJob.latestStatus)" size="small">{{ statusLabel(orderJob.latestStatus) }}</el-tag><span class="detail-link">查看最近运行</span></el-button>
+      </div>
+      <div class="job-footer">
+        <span>业务执行开关 <el-switch :model-value="orderJob.enabled" :disabled="!overview?.managementEnabled" size="small" @change="toggleOrder(Boolean($event))" /></span>
+        <small>Cron 启停在 XXL-JOB Admin 操作</small>
+      </div>
+    </article>
+
+    <section v-if="orderJob" class="workspace">
+      <el-tabs v-model="tab" @tab-change="loadTab">
+        <el-tab-pane label="SRM 已同步订单" name="data">
+          <el-alert v-if="!overview?.managementEnabled" title="订单查询需要后端启用集成管理" type="info" :closable="false" show-icon />
           <template v-else>
-            <el-button type="primary" :loading="triggering === `${job.jobCode}:AUTO`" :disabled="!overview?.managementEnabled || isActiveRun(job.latestStatus)" @click="trigger(job, 'AUTO')">{{ job.baselineComplete ? '拉取增量' : '首次全量同步' }}</el-button>
-            <el-dropdown @command="(mode: RunMode) => trigger(job, mode)">
-              <el-button :disabled="!overview?.managementEnabled || isActiveRun(job.latestStatus)">对账与修复<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="RECONCILE">只读全量对账</el-dropdown-item>
-                  <el-dropdown-item command="REPAIR">对账并修复差异</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+            <el-alert v-if="tableFailed" title="订单读取失败，请检查管理密钥，或确认后端已加载新版订单查询接口。" type="warning" :closable="false" show-icon />
+            <div class="table-toolbar"><el-input v-model="keyword" placeholder="输入 ERP 或 SRM 订单号" clearable style="max-width:300px" @keyup.enter="searchOrders" @clear="searchOrders"><template #append><el-button @click="searchOrders">查询</el-button></template></el-input></div>
+            <el-table :data="orders" v-loading="tableLoading" stripe>
+              <el-table-column prop="sourceOrderNo" label="ERP 订单号" min-width="155" />
+              <el-table-column prop="orderNo" label="SRM 订单号" min-width="145" />
+              <el-table-column prop="title" label="订单标题" min-width="180" />
+              <el-table-column label="发布状态" width="105"><template #default="{ row }">{{ publicationLabel(row.publicationStatus) }}</template></el-table-column>
+              <el-table-column label="ERP 修改时间" min-width="170"><template #default="{ row }">{{ formatTime(row.sourceUpdatedAt) }}</template></el-table-column>
+              <el-table-column label="SRM 同步时间" min-width="170"><template #default="{ row }">{{ formatTime(row.syncedAt) }}</template></el-table-column>
+              <template #empty><el-empty :description="keyword ? '没有匹配的采购订单' : '尚无同步订单。发布源订单后，在 XXL-JOB Admin 执行采购订单同步。'" :image-size="85" /></template>
+            </el-table>
+            <el-pagination class="pagination" v-model:current-page="dataPage" :page-size="20" :total="dataTotal" layout="total, prev, pager, next" @current-change="loadTab" />
           </template>
-          <el-button v-if="job.latestRunId" link type="primary" @click="selectedRun = job.latestRunId"><el-tag :type="statusTone(job.latestStatus)" size="small">{{ statusLabel(job.latestStatus) }}</el-tag><span class="detail-link">查看详情</span></el-button>
-        </div>
-        <div class="job-footer"><span>业务执行开关 <el-switch :model-value="job.enabled" size="small" :disabled="!overview?.managementEnabled" @change="(value: string | number | boolean) => toggleJob(job, Boolean(value))" /></span><small>Cron 启停请在 XXL-JOB Admin 操作</small><el-button v-if="!isPurchaseOrderJob(job.jobCode) && !job.baselineComplete && !isActiveRun(job.latestStatus)" :disabled="!overview?.managementEnabled" link type="warning" @click="resetBaseline(job)">重建未完成基线</el-button></div>
-      </article>
-    </div>
-
-    <section class="workspace">
-      <el-tabs v-model="tab" @tab-change="changeTab">
-        <el-tab-pane label="SRM 本地主数据" name="data">
-          <div class="table-toolbar"><el-radio-group v-model="dataType" @change="changeDataType"><el-radio-button value="COST_CENTER">成本中心</el-radio-button><el-radio-button value="EXCHANGE_RATE">汇率</el-radio-button></el-radio-group><el-input v-model="keyword" :placeholder="dataType === 'COST_CENTER' ? '搜索名称或成本中心编码' : '搜索币种，如 USD'" clearable style="max-width:280px" @keyup.enter="searchRecords" @clear="searchRecords"><template #append><el-button :icon="Search" @click="searchRecords" /></template></el-input></div>
-          <el-table :data="records" v-loading="tableLoading" stripe>
-            <template v-if="dataType === 'COST_CENTER'">
-              <el-table-column prop="costCenterCode" label="成本中心编码" width="160" /><el-table-column prop="name" label="名称" min-width="170" /><el-table-column prop="controllingArea" label="控制范围" width="100" /><el-table-column prop="companyCode" label="公司" width="85" /><el-table-column label="有效期" min-width="200"><template #default="{ row }">{{ row.validFrom }} ~ {{ row.validTo }}</template></el-table-column>
-            </template>
-            <template v-else>
-              <el-table-column prop="rateType" label="类型" width="70" /><el-table-column label="币种方向" width="140"><template #default="{ row }">{{ row.fromCurrency }} → {{ row.toCurrency }}</template></el-table-column><el-table-column prop="normalizedRate" label="规范化汇率（1单位原币）" min-width="190" /><el-table-column prop="effectiveDate" label="生效日" width="120" /><el-table-column prop="quotationMethod" label="报价方式" width="120" />
-            </template>
-            <el-table-column prop="sourceId" label="源记录 ID" min-width="150" /><el-table-column prop="sourceUpdatedAt" label="源修改时间（UTC · 微秒）" min-width="250" /><el-table-column label="独立业务状态" min-width="200"><template #default="{ row }"><div class="state-tags"><el-tag :type="row.blocked ? 'warning' : 'info'" size="small">{{ row.blocked ? '冻结' : '未冻结' }}</el-tag><el-tag :type="row.enabled ? 'success' : 'warning'" size="small">{{ row.enabled ? '启用' : '禁用' }}</el-tag><el-tag :type="row.isDeleted ? 'danger' : 'info'" size="small">{{ row.isDeleted ? '逻辑删除' : '未删除' }}</el-tag></div></template></el-table-column><el-table-column label="同步时间" width="185"><template #default="{ row }">{{ formatTime(row.syncedAt) }}</template></el-table-column>
-            <template #empty><el-empty description="尚无同步数据，请先执行首次全量同步。" :image-size="90" /></template>
-          </el-table>
-          <el-pagination class="pagination" v-model:current-page="dataPage" :page-size="20" :total="dataTotal" layout="total, prev, pager, next" @current-change="loadRecords" />
         </el-tab-pane>
         <el-tab-pane label="同步运行记录" name="runs">
-          <p class="table-hint">每次执行可按运行 ID 查询。采购订单由 XXL-JOB 重试或手动触发，增量从最后提交页续跑。</p>
-          <el-table :data="runs" v-loading="tableLoading" stripe><el-table-column label="运行ID" min-width="165"><template #default="{ row }"><el-button link type="primary" @click="selectedRun = row.runId"><span class="mono">{{ row.runId.slice(0, 13) }}…</span></el-button></template></el-table-column><el-table-column label="数据流" min-width="135"><template #default="{ row }">{{ syncJobLabel(row.jobCode) }} · {{ modeLabel(row.mode) }}</template></el-table-column><el-table-column label="触发" width="105"><template #default="{ row }"><el-tag :type="row.triggerType === 'XXL' ? 'primary' : 'info'" size="small">{{ row.triggerType }}</el-tag></template></el-table-column><el-table-column label="XXL任务" width="95"><template #default="{ row }">{{ row.xxlJobId ?? '—' }}</template></el-table-column><el-table-column label="状态" width="115"><template #default="{ row }"><el-tag :type="statusTone(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column><el-table-column prop="attemptNo" label="次数" width="65" /><el-table-column label="拉取 / 应用 / 忽略" width="160"><template #default="{ row }">{{ row.fetchedCount }} / {{ row.appliedCount }} / {{ row.ignoredCount }}</template></el-table-column><el-table-column prop="reason" label="原因" min-width="160" show-overflow-tooltip /><el-table-column label="创建时间" width="180"><template #default="{ row }">{{ formatTime(row.createdAt) }}</template></el-table-column><el-table-column label="操作" width="85"><template #default="{ row }"><el-button link type="primary" @click="selectedRun = row.runId">详情</el-button></template></el-table-column></el-table>
-          <el-pagination class="pagination" v-model:current-page="runPage" :page-size="20" :total="runTotal" layout="total, prev, pager, next" @current-change="loadRuns" />
+          <p class="table-hint">只显示采购订单任务。失败页和对账差异可在运行详情中查看。</p>
+          <el-alert v-if="tableFailed" title="运行记录读取失败" type="warning" :closable="false" show-icon />
+          <el-table :data="runs" v-loading="tableLoading" stripe>
+            <el-table-column label="运行 ID" min-width="155"><template #default="{ row }"><el-button link type="primary" @click="selectedRun = row.runId">{{ row.runId.slice(0, 13) }}…</el-button></template></el-table-column>
+            <el-table-column label="模式" min-width="125"><template #default="{ row }">{{ modeLabel(row.mode) }}</template></el-table-column>
+            <el-table-column prop="xxlJobId" label="XXL 任务" width="100" />
+            <el-table-column label="状态" width="115"><template #default="{ row }"><el-tag :type="statusTone(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag></template></el-table-column>
+            <el-table-column label="拉取 / 应用 / 忽略" min-width="155"><template #default="{ row }">{{ row.fetchedCount }} / {{ row.appliedCount }} / {{ row.ignoredCount }}</template></el-table-column>
+            <el-table-column prop="reason" label="原因" min-width="155" show-overflow-tooltip />
+            <el-table-column label="创建时间" min-width="170"><template #default="{ row }">{{ formatTime(row.createdAt) }}</template></el-table-column>
+          </el-table>
+          <el-pagination class="pagination" v-model:current-page="runPage" :page-size="20" :total="runTotal" layout="total, prev, pager, next" @current-change="loadTab" />
         </el-tab-pane>
-        <el-tab-pane :label="`告警待办${overview?.openAlertCount ? ` (${overview.openAlertCount})` : ''}`" name="alerts">
-          <el-alert title="此处显示 SRM 业务告警。XXL-JOB 调度告警及通知配置请到 Admin 查看。已读状态表示有人确认收到告警。" type="info" :closable="false" show-icon />
-          <el-table :data="alerts" v-loading="tableLoading" stripe><el-table-column label="数据流" width="105"><template #default="{ row }">{{ syncJobLabel(row.jobCode) }}</template></el-table-column><el-table-column prop="category" label="类别" width="160" /><el-table-column prop="summary" label="摘要" min-width="290" /><el-table-column label="状态" width="110"><template #default="{ row }"><el-tag :type="row.status === 'RESOLVED' ? 'success' : row.status === 'OPEN' ? 'danger' : 'warning'" size="small">{{ row.status === 'RESOLVED' ? '已恢复' : row.status === 'OPEN' ? '待处理' : '已读未恢复' }}</el-tag></template></el-table-column><el-table-column prop="occurrenceCount" label="累计次数" width="90" /><el-table-column label="最近发现" width="185"><template #default="{ row }">{{ formatTime(row.lastSeenAt) }}</template></el-table-column><el-table-column label="操作" width="150"><template #default="{ row }"><el-button v-if="row.runId" link type="primary" @click="selectedRun = row.runId">关联运行</el-button><el-button v-if="row.status === 'OPEN'" link :disabled="!overview?.managementEnabled" @click="acknowledge(row.id)">已读</el-button></template></el-table-column></el-table>
-          <el-pagination class="pagination" v-model:current-page="alertPage" :page-size="20" :total="alertTotal" layout="total, prev, pager, next" @current-change="loadAlerts" />
+        <el-tab-pane label="采购订单告警" name="alerts">
+          <el-alert v-if="tableFailed" title="告警读取失败" type="warning" :closable="false" show-icon />
+          <el-table :data="alerts" v-loading="tableLoading" stripe>
+            <el-table-column prop="category" label="类别" width="165" /><el-table-column prop="summary" label="摘要" min-width="260" />
+            <el-table-column label="状态" width="110"><template #default="{ row }">{{ row.status === 'RESOLVED' ? '已恢复' : row.status === 'OPEN' ? '待处理' : '已读未恢复' }}</template></el-table-column>
+            <el-table-column prop="occurrenceCount" label="次数" width="75" />
+            <el-table-column label="最近发现" min-width="170"><template #default="{ row }">{{ formatTime(row.lastSeenAt) }}</template></el-table-column>
+            <el-table-column label="操作" min-width="140"><template #default="{ row }"><el-button v-if="row.runId" link type="primary" @click="selectedRun = row.runId">关联运行</el-button><el-button v-if="row.status === 'OPEN'" link :disabled="!overview?.managementEnabled" @click="acknowledge(row.id)">已读</el-button></template></el-table-column>
+          </el-table>
+          <el-pagination class="pagination" v-model:current-page="alertPage" :page-size="20" :total="alertTotal" layout="total, prev, pager, next" @current-change="loadTab" />
         </el-tab-pane>
-        <el-tab-pane v-if="overview?.mockEnabled" label="SAP 源端模拟（开发）" name="source"><MockSapPanel v-if="tab === 'source'" :can-manage="!!overview?.managementEnabled" :settle-delay-seconds="overview?.settleDelaySeconds ?? 120" :overlap-seconds="overview?.overlapSeconds ?? 300" @changed="refreshOverview" /></el-tab-pane>
       </el-tabs>
     </section>
-    <footer class="page-footnote">{{ overview?.mockEnabled ? '当前为本地 SAP 模拟环境' : '当前使用配置的外围数据接口' }} · 超出重叠回扫范围的变化由对账发现</footer>
-    <RunDetailDrawer :run-id="selectedRun" :can-manage="!!overview?.managementEnabled" :purchase-order-checkpoint="purchaseOrderJob?.committedCursor" :admin-url="adminUrl" @close="selectedRun = null" @changed="refresh" />
+    <RunDetailDrawer :run-id="selectedRun" :purchase-order-checkpoint="orderJob?.committedCursor" :admin-url="adminUrl" @close="selectedRun = null" @changed="refresh()" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { Document } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, OfficeBuilding, Money, ArrowDown, Document } from '@element-plus/icons-vue'
-import { integrationApi } from '@/api/integration'
-import type { Overview, JobDefinition, DataType, RunMode, TargetRecord, SyncRun, SyncAlert, SyncCheckpoint } from '@/types/integration'
-import { formatTime, statusLabel, statusTone, modeLabel, isActiveRun, isPurchaseOrderJob, syncJobLabel } from '@/types/integration'
+import { integrationApi, type PurchaseOrderSummary } from '@/api/integration'
+import { PURCHASE_ORDER_JOB, formatTime, modeLabel, statusLabel, statusTone } from '@/types/integration'
+import type { Overview, SyncAlert, SyncRun } from '@/types/integration'
 import { safeXxlAdminUrl } from '@/utils/xxlJobDisplay'
-import MockSapPanel from './MockSapPanel.vue'
+import { parsePurchaseOrderCheckpoint, purchaseOrderCursor } from './checkpointDisplay'
 import RunDetailDrawer from './RunDetailDrawer.vue'
-import { parseCheckpoint, checkpointCursor, checkpointLag, parsePurchaseOrderCheckpoint, purchaseOrderCursor } from './checkpointDisplay'
 
-const overview = ref<Overview | null>(null), loading = ref(false), loadFailed = ref(false), tableLoading = ref(false)
-const tab = ref('data'), dataType = ref<DataType>('COST_CENTER'), keyword = ref('')
-const records = ref<TargetRecord[]>([]), dataPage = ref(1), dataTotal = ref(0)
-const runs = ref<SyncRun[]>([]), runPage = ref(1), runTotal = ref(0)
-const alerts = ref<SyncAlert[]>([]), alertPage = ref(1), alertTotal = ref(0)
-const selectedRun = ref<string | null>(null), triggering = ref<string | null>(null)
-const pendingRequests = new Map<string, { key: string; reason: string }>()
+const orderJobCode = PURCHASE_ORDER_JOB
+const overview = ref<Overview | null>(null)
+const orderJob = computed(() => overview.value?.jobs.find(job => job.jobCode === orderJobCode))
+const orderCheckpoint = computed(() => parsePurchaseOrderCheckpoint(orderJob.value?.committedCursor))
 const adminUrl = computed(() => safeXxlAdminUrl(overview.value?.xxlAdminUrl))
-const purchaseOrderJob = computed(() => overview.value?.jobs.find(job => isPurchaseOrderJob(job.jobCode)))
-const orderCheckpoint = computed(() => parsePurchaseOrderCheckpoint(purchaseOrderJob.value?.committedCursor))
-const orderedJobs = computed(() => {
-  const jobs = overview.value?.jobs ?? []
-  return purchaseOrderJob.value
-    ? [purchaseOrderJob.value, ...jobs.filter(job => !isPurchaseOrderJob(job.jobCode))]
-    : jobs
-})
+const loading = ref(false)
+const loadFailed = ref(false)
+const tableLoading = ref(false)
+const tableFailed = ref(false)
+const tab = ref('data')
+const keyword = ref('')
+const orders = ref<PurchaseOrderSummary[]>([])
+const runs = ref<SyncRun[]>([])
+const alerts = ref<SyncAlert[]>([])
+const dataPage = ref(1), runPage = ref(1), alertPage = ref(1)
+const dataTotal = ref(0), runTotal = ref(0), alertTotal = ref(0)
+const selectedRun = ref<string | null>(null)
+let requestGeneration = 0
 let disposed = false
-let dataGeneration = 0
-let overviewGeneration = 0
 let timer: ReturnType<typeof setInterval> | undefined
-const checkpoints = ref<Record<string, SyncCheckpoint>>({})
 
-function checkpoint(job: JobDefinition) {
-  return checkpoints.value[job.jobCode] ?? parseCheckpoint(job.committedCursor)
-}
-async function refreshOverview() {
-  const generation = ++overviewGeneration
-  const data = await integrationApi.overview()
-  if (disposed || generation !== overviewGeneration) return
-  overview.value = data
-  const legacyJobs = data.jobs.filter(job => !isPurchaseOrderJob(job.jobCode))
-  const results = await Promise.allSettled(legacyJobs.map(job => integrationApi.checkpoint(job.jobCode)))
-  if (disposed || generation !== overviewGeneration) return
-  const next: Record<string, SyncCheckpoint> = {}
-  results.forEach((result, index) => { const job = legacyJobs[index]; if (job && result.status === 'fulfilled') next[job.jobCode] = result.value })
-  checkpoints.value = next
-}
-async function loadRecords() {
-  const generation = ++dataGeneration
-  const result = await integrationApi.records(dataType.value, dataPage.value, keyword.value)
-  if (!disposed && generation === dataGeneration) { records.value = result.list; dataTotal.value = result.total }
-}
-async function loadRuns() { const result = await integrationApi.runs(runPage.value); if (!disposed) { runs.value = result.list; runTotal.value = result.total } }
-async function loadAlerts() { const result = await integrationApi.alerts(alertPage.value); if (!disposed) { alerts.value = result.list; alertTotal.value = result.total } }
 async function loadTab() {
+  if (!orderJob.value) return
+  const generation = ++requestGeneration
+  tableFailed.value = false
   tableLoading.value = true
-  try { if (tab.value === 'data') await loadRecords(); else if (tab.value === 'runs') await loadRuns(); else if (tab.value === 'alerts') await loadAlerts() }
-  finally { tableLoading.value = false }
+  const current = () => !disposed && generation === requestGeneration
+  try {
+    if (tab.value === 'data' && overview.value?.managementEnabled) {
+      const result = await integrationApi.purchaseOrders(dataPage.value, keyword.value)
+      if (current()) { orders.value = result.list; dataTotal.value = result.total }
+    } else if (tab.value === 'runs') {
+      const result = await integrationApi.runs(runPage.value, orderJobCode)
+      if (current()) { runs.value = result.list; runTotal.value = result.total }
+    } else if (tab.value === 'alerts') {
+      const result = await integrationApi.alerts(alertPage.value, orderJobCode)
+      if (current()) { alerts.value = result.list; alertTotal.value = result.total }
+    }
+  } catch {
+    if (current()) tableFailed.value = true
+  } finally {
+    if (current()) tableLoading.value = false
+  }
 }
-async function refresh() {
+
+async function refresh(includeTable = true) {
   if (loading.value) return
   loading.value = true
-  try { await Promise.all([refreshOverview(), loadTab()]); loadFailed.value = false }
-  catch { loadFailed.value = true }
-  finally { loading.value = false }
-}
-function changeTab() { void loadTab().catch(() => { loadFailed.value = true }) }
-function changeDataType() { dataPage.value = 1; records.value = []; changeTab() }
-function searchRecords() { dataPage.value = 1; changeTab() }
-function openScheduler() { if (adminUrl.value) window.open(adminUrl.value, '_blank', 'noopener,noreferrer') }
-async function trigger(job: JobDefinition, mode: RunMode) {
-  if (triggering.value || isPurchaseOrderJob(job.jobCode)) return
-  const action = `${job.jobCode}:${mode}`
-  triggering.value = action
   try {
-    let pending = pendingRequests.get(action)
-    if (!pending) {
-      let reason = mode === 'AUTO' ? '同步中心手动触发' : '同步中心手动只读对账'
-      if (mode === 'REPAIR') {
-        const result = await ElMessageBox.prompt('将全量扫描并逐条复核最新源值。请输入修复原因。', '对账并修复', { inputValidator: value => !!value?.trim() || '请填写原因', type: 'warning' })
-        reason = result.value
-      }
-      pending = { key: crypto.randomUUID(), reason }
-      pendingRequests.set(action, pending)
-    }
-    const run = await integrationApi.trigger(job.jobCode, mode, pending.reason, pending.key)
-    pendingRequests.delete(action)
-    selectedRun.value = run.runId
-    ElMessage.success('任务已提交，可在详情中查看真实进度')
-    await refresh()
-  } catch (error) {
-    const status = (error as { response?: { status?: number } } | null)?.response?.status
-    if (status && status >= 400 && status < 500 && status !== 408 && status !== 429) pendingRequests.delete(action)
+    const previousJob = orderJob.value
+    const data = await integrationApi.overview()
+    if (disposed) return
+    overview.value = data
+    loadFailed.value = false
+    if (includeTable || (tab.value !== 'data' && !tableLoading.value)
+        || (!previousJob && orderJob.value)) await loadTab()
+  } catch {
+    if (!disposed) loadFailed.value = true
+  } finally {
+    if (!disposed) loading.value = false
   }
-  finally { triggering.value = null }
 }
-async function toggleJob(job: JobDefinition, enabled: boolean) {
-  try { await integrationApi.enable(job.jobCode, enabled); await refreshOverview(); ElMessage.success(enabled ? '业务执行已启用；Cron仍由XXL-JOB管理' : '业务执行已停用；当前运行不受影响') } catch { /* Keep confirmed server state. */ }
+
+function searchOrders() { dataPage.value = 1; void loadTab() }
+function openScheduler() { if (adminUrl.value) window.open(adminUrl.value, '_blank', 'noopener,noreferrer') }
+function publicationLabel(value: PurchaseOrderSummary['publicationStatus']) {
+  return ({ PUBLISHED: '已发布', WITHDRAWN: '已撤回', CANCELLED: '已取消' })[value] ?? value
 }
-async function resetBaseline(job: JobDefinition) {
-  if (isPurchaseOrderJob(job.jobCode)) return
+async function toggleOrder(enabled: boolean) {
   try {
-    const { value } = await ElMessageBox.prompt('将为未完成基线建立新的扫描锚点和固定 ID 上界，并提升代次；保留已落库记录。请先结束活动或等待重试的运行，并填写原因。', '重建未完成基线', { inputValidator: value => !!value?.trim() || '请填写原因' })
-    await integrationApi.resetBaseline(job.jobCode, value); await refresh(); ElMessage.success('未完成基线已重置，请执行首次全量同步')
-  } catch { /* Dialog cancellation or backend rejection. */ }
+    const { value } = await ElMessageBox.prompt('请输入任务开关的操作原因。', enabled ? '启用同步' : '停用同步', {
+      inputValidator: reason => (!!reason?.trim() && reason.trim().length <= 400) || '请填写 400 字以内的原因',
+    })
+    await integrationApi.enable(orderJobCode, enabled, value.trim())
+    await refresh()
+  } catch { /* Requests already show their error. */ }
 }
-async function acknowledge(id: number) { try { await integrationApi.acknowledge(id); await loadAlerts() } catch { /* Shared error notification. */ } }
 async function configureKey() {
-  try { const { value } = await ElMessageBox.prompt('仅当后端配置了 INTEGRATION_ADMIN_KEY 时需要填写。密钥只保存在当前浏览器会话；留空清除。', '集成管理密钥', { inputType: 'password' }); if (value) sessionStorage.setItem('integration-admin-key', value); else sessionStorage.removeItem('integration-admin-key'); ElMessage.success('会话配置已保存') } catch { /* Dialog cancellation. */ }
+  try {
+    const { value } = await ElMessageBox.prompt('密钥仅保存在当前浏览器会话。', '集成管理密钥', { inputType: 'password' })
+    const key = value?.trim()
+    if (key) sessionStorage.setItem('integration-admin-key', key)
+    else sessionStorage.removeItem('integration-admin-key')
+    ElMessage.success('管理密钥已更新')
+    await refresh()
+  } catch { /* Cancel leaves the previous key unchanged. */ }
 }
-onMounted(() => { void refresh(); timer = setInterval(() => { if (!document.hidden && tab.value !== 'source') void refresh() }, 5000) })
-onUnmounted(() => { disposed = true; dataGeneration++; overviewGeneration++; if (timer) clearInterval(timer) })
+async function acknowledge(id: number) {
+  try { await integrationApi.acknowledge(id); await loadTab() } catch { /* Request error already shown. */ }
+}
+
+onMounted(() => {
+  void refresh()
+  timer = setInterval(() => { if (!document.hidden) void refresh(false) }, 5000)
+})
+onUnmounted(() => {
+  disposed = true
+  clearInterval(timer)
+})
 </script>
 
 <style scoped>

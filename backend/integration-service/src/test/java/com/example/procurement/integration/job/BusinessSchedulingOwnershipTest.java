@@ -4,19 +4,18 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
-import org.springframework.scheduling.annotation.Scheduled;
+import com.xxl.job.core.handler.annotation.XxlJob;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class BusinessSchedulingOwnershipTest {
     @Test
-    void springSchedulingContainsOnlyInternalMaintenanceWork() {
-        Set<String> scheduledMethods = Stream.of(SyncJobExecutor.class.getDeclaredMethods())
-                .filter(method -> method.isAnnotationPresent(Scheduled.class))
-                .map(method -> method.getName())
+    void xxlRegistersOnlyPurchaseOrderTasks() {
+        Set<String> handlers = Stream.of(XxlPurchaseOrderJobHandlers.class.getDeclaredMethods())
+                .filter(method -> method.isAnnotationPresent(XxlJob.class))
+                .map(method -> method.getAnnotation(XxlJob.class).value())
                 .collect(Collectors.toSet());
 
-        assertThat(scheduledMethods).containsExactlyInAnyOrder("dispatch", "heartbeats", "recovery", "staleAlerts");
-        assertThat(scheduledMethods).doesNotContain("triggerCron", "weeklyReconciliation");
+        assertThat(handlers).containsExactlyInAnyOrder("sapPurchaseOrderSyncJobHandler", "sapPurchaseOrderReconcileJobHandler", "sapPurchaseOrderRepairJobHandler");
     }
 }

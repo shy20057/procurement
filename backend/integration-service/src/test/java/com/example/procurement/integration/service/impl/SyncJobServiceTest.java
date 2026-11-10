@@ -10,11 +10,11 @@ import com.example.procurement.integration.dao.mapper.JobRequestKeyMapper;
 import com.example.procurement.integration.dao.mapper.JobRunMapper;
 import com.example.procurement.integration.dao.mapper.SyncAuditMapper;
 import com.example.procurement.integration.dao.mapper.SyncCheckpointMapper;
-import com.example.procurement.integration.domain.context.JobContext;
 import com.example.procurement.integration.domain.context.XxlTriggerMetadata;
 import com.example.procurement.integration.domain.result.XxlSubmission;
 import com.example.procurement.integration.dto.domain.ClaimableRunDTO;
 import com.example.procurement.integration.dto.domain.LeaseStateDTO;
+import com.example.procurement.integration.exception.IntegrationProblem;
 import com.example.procurement.integration.service.SyncAlertService;
 import com.example.procurement.integration.service.SyncLeaseService;
 
@@ -27,6 +27,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -46,44 +47,17 @@ class SyncJobServiceTest {
         when(manager.getTransaction(any(TransactionDefinition.class))).thenReturn(mock(TransactionStatus.class));
         service = new SyncJobServiceImpl(definitions, runs, requests, leaseMapper,
                 mock(SyncCheckpointMapper.class), mock(SyncAuditMapper.class), mock(SyncLeaseService.class),
-                mock(SyncAlertService.class), new SyncSettings(500, 200, 5, 60), manager);
-    }
-
-    @Test
-    void idempotentManualRetryReturnsOriginalRunEvenWhenJobWasDisabledLater() {
-        UUID original = UUID.randomUUID();
-        when(definitions.lockDefinition("SAP_COST_CENTER_DELTA")).thenReturn(definition(false));
-        JobRequestKeyDO previous = new JobRequestKeyDO();
-        previous.setRunId(original); previous.setJobCode("SAP_COST_CENTER_DELTA"); previous.setMode("AUTO");
-        when(requests.selectByRequestId("request-1")).thenReturn(previous);
-
-        assertThat(service.submit("SAP_COST_CENTER_DELTA", "AUTO", "request-1", "重复请求", "MANUAL", null)).isEqualTo(original);
-        verify(runs, never()).insert(any());
-    }
-
-    @Test
-    void dispatcherSkipsBusyResourceAndClaimsAnotherDataset() {
-        ClaimableRunDTO cost = candidate("SAP_COST_CENTER_DELTA", "SAP_COST_CENTER_WRITER");
-        ClaimableRunDTO rate = candidate("SAP_EXCHANGE_RATE_DELTA", "SAP_EXCHANGE_RATE_WRITER");
-        when(runs.lockLocalCandidates()).thenReturn(List.of(cost, rate));
-        when(leaseMapper.acquire("SAP_COST_CENTER_WRITER", "node", 60)).thenReturn(null);
-        when(leaseMapper.acquire("SAP_EXCHANGE_RATE_WRITER", "node", 60)).thenReturn(17L);
-
-        JobContext claimed = service.claim("node");
-
-        assertThat(claimed.runId()).isEqualTo(rate.getRunId());
-        assertThat(claimed.resourceKey()).isEqualTo("SAP_EXCHANGE_RATE_WRITER");
-        assertThat(claimed.token()).isEqualTo(17L);
+                mock(SyncAlertService.class), new SyncSettings(60, 300, 50), manager);
     }
 
     @Test
     void exactSuccessfulXxlReplayReusesOriginalRun() {
         UUID original = UUID.randomUUID();
-        when(definitions.lockDefinition("SAP_COST_CENTER_DELTA")).thenReturn(definition(true));
-        JobRunDO previous = new JobRunDO(); previous.setRunId(original); previous.setStatus("SUCCEEDED"); previous.setMode("AUTO");
-        when(runs.lockXxlIdentity("SAP_COST_CENTER_DELTA", 12L, "a".repeat(64), 0)).thenReturn(previous);
+        when(definitions.lockDefinition("SAP_PURCHASE_ORDER_DELTA")).thenReturn(definition(true));
+        JobRunDO previous = new JobRunDO(); previous.setRunId(original); previous.setStatus("SUCCEEDED"); previous.setMode("AUTO"); previous.setReason("XXL-JOB调度触发");
+        when(runs.lockXxlIdentity("SAP_PURCHASE_ORDER_DELTA", 12L, "a".repeat(64), 0)).thenReturn(previous);
 
-        XxlSubmission result = service.submitXxl("SAP_COST_CENTER_DELTA", metadata(), "request-xxl");
+        XxlSubmission result = service.submitXxl("SAP_PURCHASE_ORDER_DELTA", "AUTO", metadata(), "request-xxl");
 
         assertThat(result.state()).isEqualTo(XxlSubmission.State.DUPLICATE_TERMINAL);
         assertThat(result.runId()).isEqualTo(original);
@@ -93,10 +67,10 @@ class SyncJobServiceTest {
     @Test
     void differentBusyXxlTriggerGetsItsOwnFailedRun() {
         JobRunDO active = new JobRunDO(); active.setRunId(UUID.randomUUID());
-        when(definitions.lockDefinition("SAP_COST_CENTER_DELTA")).thenReturn(definition(true));
-        when(runs.selectActiveResource(eq("SAP_COST_CENTER_WRITER"), any(UUID.class))).thenReturn(active);
+        when(definitions.lockDefinition("SAP_PURCHASE_ORDER_DELTA")).thenReturn(definition(true));
+        when(runs.selectActiveResource(eq("SAP_PURCHASE_ORDER_WRITER"), any(UUID.class))).thenReturn(active);
 
-        XxlSubmission result = service.submitXxl("SAP_COST_CENTER_DELTA", metadata(), "request-new");
+        XxlSubmission result = service.submitXxl("SAP_PURCHASE_ORDER_DELTA", "AUTO", metadata(), "request-new");
 
         assertThat(result.state()).isEqualTo(XxlSubmission.State.BUSY);
         assertThat(result.runId()).isNotEqualTo(active.getRunId());
@@ -105,25 +79,43 @@ class SyncJobServiceTest {
 
     @Test
     void recoveryRecognizesReplacedFenceEvenWhileNewLeaseIsAlive() {
-        ClaimableRunDTO stale = candidate("SAP_COST_CENTER_DELTA", "SAP_COST_CENTER_WRITER");
+        ClaimableRunDTO stale = candidate("SAP_PURCHASE_ORDER_DELTA", "SAP_PURCHASE_ORDER_WRITER");
         stale.setStatus("RUNNING"); stale.setTriggerType("XXL"); stale.setOwnerId("old-node"); stale.setFenceToken(3L);
         LeaseStateDTO current = new LeaseStateDTO(); current.setOwnerId("new-node"); current.setFenceToken(4L); current.setExpired(false);
-        when(runs.lockStaleRuns()).thenReturn(List.of(stale));
-        when(leaseMapper.lockState("SAP_COST_CENTER_WRITER")).thenReturn(current);
+        when(runs.lockStalePurchaseOrderRuns("SAP_PURCHASE_ORDER_DELTA", 60)).thenReturn(List.of(stale));
+        when(definitions.lockDefinition("SAP_PURCHASE_ORDER_DELTA")).thenReturn(definition(true));
+        when(leaseMapper.lockState("SAP_PURCHASE_ORDER_WRITER")).thenReturn(current);
 
-        service.recoverExpired();
+        service.submitXxl("SAP_PURCHASE_ORDER_DELTA", "AUTO", metadata(), "request-recovery");
 
         verify(runs).recover(stale.getRunId(), "FAILED");
         verify(leaseMapper, never()).release(anyString(), anyString(), anyLong());
     }
 
+    @Test
+    void sameXxlDeliveryCannotChangeRepairTarget() {
+        String code = "SAP_PURCHASE_ORDER_DELTA";
+        when(definitions.lockDefinition(code)).thenReturn(definition(true));
+        JobRunDO previous = new JobRunDO();
+        previous.setMode("REPAIR");
+        previous.setReason("处理差异 [differenceId=17]");
+        when(runs.lockXxlIdentity(code, 12L, "a".repeat(64), 0)).thenReturn(previous);
+        var parameters = new XxlTriggerMetadata.Parameters("operator", "处理差异", null, 17L, null);
+        var metadata = new XxlTriggerMetadata(12L, "a".repeat(64), 0, 1, "http://node:9999", parameters);
+
+        assertThatThrownBy(() -> service.submitXxl(code, "REPAIR", metadata, "repair"))
+                .isInstanceOfSatisfying(IntegrationProblem.class, problem ->
+                        assertThat(problem.code).isEqualTo("IDEMPOTENCY_CONFLICT"));
+        verify(runs, never()).insert(any());
+    }
+
     private JobDefinitionDO definition(boolean enabled) {
-        JobDefinitionDO value = new JobDefinitionDO(); value.setJobCode("SAP_COST_CENTER_DELTA");
-        value.setEnabled(enabled); value.setResourceKey("SAP_COST_CENTER_WRITER"); return value;
+        JobDefinitionDO value = new JobDefinitionDO(); value.setJobCode("SAP_PURCHASE_ORDER_DELTA");
+        value.setEnabled(enabled); value.setResourceKey("SAP_PURCHASE_ORDER_WRITER"); return value;
     }
     private ClaimableRunDTO candidate(String code, String resource) {
         ClaimableRunDTO value = new ClaimableRunDTO(); value.setRunId(UUID.randomUUID()); value.setJobCode(code);
         value.setResourceKey(resource); value.setMode("AUTO"); value.setTriggerType("MANUAL"); value.setAttemptNo(0); return value;
     }
-    private XxlTriggerMetadata metadata() { return new XxlTriggerMetadata(12L, "a".repeat(64), 0, 1, "http://node:9999"); }
+    private XxlTriggerMetadata metadata() { return new XxlTriggerMetadata(12L, "a".repeat(64), 0, 1, "http://node:9999", null); }
 }

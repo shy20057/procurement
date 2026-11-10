@@ -1,7 +1,5 @@
 package com.example.procurement.integration.service;
 
-import com.example.procurement.integration.dto.resp.CostCenterRespDTO;
-import com.example.procurement.integration.dto.resp.ExchangeRateRespDTO;
 import com.example.procurement.integration.dto.resp.IntegrationOverviewRespDTO;
 import com.example.procurement.integration.dto.resp.JobDefinitionRespDTO;
 import com.example.procurement.integration.dto.resp.JobRunDetailRespDTO;
@@ -17,12 +15,8 @@ import java.util.UUID;
 public interface IntegrationQueryService {
     IntegrationOverviewRespDTO overview();
     List<JobDefinitionRespDTO> definitions();
-    PageRespDTO<CostCenterRespDTO> costCenters(int page, int size, String keyword);
-    PageRespDTO<ExchangeRateRespDTO> exchangeRates(int page, int size, String keyword);
-    ExchangeRateRespDTO resolve(String fromCurrency, String toCurrency, String rateType, java.time.LocalDate date);
     SyncCheckpointRespDTO checkpoint(String jobCode);
     PageRespDTO<JobRunRespDTO> runs(int page, int size, String jobCode);
-    JobRunRespDTO run(UUID runId);
     JobRunDetailRespDTO detail(UUID runId);
-    PageRespDTO<SyncAlertRespDTO> alerts(int page, int size);
+    PageRespDTO<SyncAlertRespDTO> alerts(int page, int size, String jobCode);
 }

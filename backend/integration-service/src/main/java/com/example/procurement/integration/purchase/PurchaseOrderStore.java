@@ -1,6 +1,7 @@
 package com.example.procurement.integration.purchase;
 
 import com.example.procurement.integration.exception.IntegrationProblem;
+import com.example.procurement.integration.dto.resp.PageRespDTO;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -241,6 +242,33 @@ public class PurchaseOrderStore {
                 """, Map.of(), Long.class);
         return maximum == null ? 0 : maximum;
     }
+
+    public PageRespDTO<OrderSummary> page(int page, int size, String keyword) {
+        if (page < 1 || size < 1 || size > 100) {
+            throw new IntegrationProblem("INVALID_PAGE", "分页范围不合法", false, 422);
+        }
+        String search = keyword == null ? "" : keyword.strip();
+        if (search.length() > 100) throw new IntegrationProblem("INVALID_KEYWORD", "订单查询词过长", false, 422);
+        var parameters = new MapSqlParameterSource("keyword", search.toLowerCase(java.util.Locale.ROOT))
+                .addValue("size", size).addValue("offset", (page - 1L) * size);
+        String where = """
+                from procurement_schema.purchase_order h
+                where h.source_system='SAP' and (
+                    :keyword='' or strpos(lower(h.po_no),:keyword)>0 or strpos(lower(h.source_order_no),:keyword)>0
+                )
+                """;
+        long total = java.util.Objects.requireNonNull(jdbc.queryForObject("select count(*) " + where, parameters, Long.class));
+        var orders = jdbc.query("""
+                select h.po_no,h.source_order_no,h.title,h.source_publication_status,h.source_updated_at,h.synced_at
+                """ + where + " order by h.synced_at desc,h.id desc limit :size offset :offset", parameters,
+                (rs, row) -> new OrderSummary(rs.getString("po_no"), rs.getString("source_order_no"),
+                        rs.getString("title"), rs.getString("source_publication_status"),
+                        instant(rs, "source_updated_at"), instant(rs, "synced_at")));
+        return new PageRespDTO<>(orders, total, page, size);
+    }
+
+    public record OrderSummary(String orderNo, String sourceOrderNo, String title, String publicationStatus,
+            Instant sourceUpdatedAt, Instant syncedAt) {}
 
     /** 版本时间独立比较。内容摘要与明细顺序、数值小数位及本地业务字段无关。 */
     public String hash(PurchaseOrderSnapshot order) {

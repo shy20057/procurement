@@ -1,65 +1,28 @@
-export type DataType = 'COST_CENTER' | 'EXCHANGE_RATE'
 export const PURCHASE_ORDER_JOB = 'SAP_PURCHASE_ORDER_DELTA'
-export const isPurchaseOrderJob = (code: string) => code === PURCHASE_ORDER_JOB
-export const syncJobLabel = (code: string) => {
-  switch (code) {
-    case PURCHASE_ORDER_JOB: return '采购订单'
-    case 'SAP_COST_CENTER_DELTA': return '成本中心'
-    case 'SAP_EXCHANGE_RATE_DELTA': return '汇率'
-    default: return code
-  }
-}
 export type RunMode = 'AUTO' | 'RECONCILE' | 'REPAIR'
 export type RunStatus = 'PENDING' | 'RUNNING' | 'RETRY_WAIT' | 'CANCEL_REQUESTED' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED'
 
 export interface Page<T> { list: T[]; total: number; page: number; size: number }
 export interface JobDefinition {
-  jobCode: string; entityType: DataType | 'PURCHASE_ORDER'; name: string; enabled: boolean
+  jobCode: string; entityType: 'PURCHASE_ORDER'; name: string; enabled: boolean
   cronExpression: string; zoneId: string; handlerCode: string; resourceKey: string; baselineComplete: boolean
   committedCursor: string | null; lastSuccessAt: string | null
   latestRunId: string | null; latestStatus: RunStatus | null; checkpointVersion: number
 }
 export interface Overview {
-  costCenterCount: number; exchangeRateCount: number; openAlertCount: number; activeRunCount: number
+  openAlertCount: number; activeRunCount: number
   jobs: JobDefinition[]; mockEnabled: boolean; managementEnabled: boolean
   schedulerProvider: 'XXL_JOB'; xxlEnabled: boolean; xxlAdminUrl: string | null; xxlExecutorAppName: string
-  emailEnabled: boolean; pageSize: number; writeBatchSize: number
-  settleDelaySeconds: number; overlapSeconds: number
-}
-export interface CostCenter {
-  controllingArea: string; costCenterCode: string; companyCode: string; name: string
-  validFrom: string; validTo: string; blocked: boolean; enabled: boolean; isDeleted: boolean
-}
-export interface ExchangeRate {
-  rateType: string; fromCurrency: string; toCurrency: string; effectiveDate: string
-  rawRate: string | number; fromFactor: string | number; toFactor: string | number
-  quotationMethod: 'DIRECT' | 'INDIRECT'; normalizedRate: string | number | null
-  blocked: boolean; enabled: boolean; isDeleted: boolean
-}
-export interface SourceRecord {
-  entityType: DataType; businessKey: string; sourceId: string; updatedAt: string
-  costCenter: CostCenter | null; exchangeRate: ExchangeRate | null
-}
-export type TargetRecord = Partial<CostCenter & ExchangeRate> & {
-  id: string; sourceId: string; sourceUpdatedAt: string; syncedAt: string
-}
-export interface SourceSaveRequest<T> { data: T; sourceId?: string | null; expectedUpdatedAt?: string | null }
-export interface SourceCursor { updatedAt: string; sourceId: string }
-export interface SyncCheckpoint {
-  mode: 'TIME_WINDOW_V2'; generation: number; baselineComplete: boolean
-  baselineAnchorAt: string | null; baselineMaxSourceId: string; baselineLastSourceId: string
-  completedWatermark: string | null; activeWindowId: string | null
-  windowStartAt: string | null; windowEndAt: string | null; pageCursor: SourceCursor | null
-  sourceTimeHighwater: string | null; lastPageAt: string | null; pageSequence: number
+  pageSize: number; overlapSeconds: number
 }
 export interface SyncRun {
   runId: string; jobCode: string; mode: RunMode; status: RunStatus; triggerType: string
   reason: string; attemptNo: number; phase: string | null; fetchedCount: number; appliedCount: number
-  ignoredCount: number; totalCount: number; errorCode: string | null; errorSummary: string | null
-  createdAt: string; startedAt: string | null; finishedAt: string | null; nextRetryAt: string | null
+  ignoredCount: number; errorCode: string | null; errorSummary: string | null
+  createdAt: string; startedAt: string | null; finishedAt: string | null
   xxlJobId?: number | null; xxlLogKey?: string | null; xxlShardIndex?: number | null
   xxlShardTotal?: number | null; executorAddress?: string | null
-  caughtUp: boolean; scanContext: string | null; windowId: string | null; targetWatermark: string | null
+  caughtUp: boolean; parentRunId: string | null; targetWatermark: string | null
 }
 export interface PageAudit {
   pageNo: number; phase: string; fromCursor: string; toCursor: string
@@ -67,7 +30,7 @@ export interface PageAudit {
 }
 export interface Failure { attemptNo: number; errorCode: string; errorSummary: string; occurredAt: string; fromCursor: string }
 export interface Difference {
-  businessKey: string; differenceType: string; sourceId: string | null
+  id: string; businessKey: string; differenceType: string; sourceId: string | null
   sourceUpdatedAt: string | null; targetUpdatedAt: string | null; repaired: boolean
   verificationStatus: string; repairStatus: string; detail: string | null
 }
@@ -76,6 +39,6 @@ export interface SyncAlert { id: number; jobCode: string; runId: string | null; 
 
 export const isActiveRun = (status: string | null | undefined) => !!status && ['PENDING', 'RUNNING', 'RETRY_WAIT', 'CANCEL_REQUESTED'].includes(status)
 export const statusLabel = (status: string | null | undefined) => ({ PENDING: '排队中', RUNNING: '运行中', RETRY_WAIT: '等待重试', CANCEL_REQUESTED: '取消中', SUCCEEDED: '已完成', FAILED: '失败', CANCELLED: '已取消' }[status || ''] || '尚未运行')
-export const modeLabel = (mode: string) => ({ AUTO: '数据同步', RECONCILE: '只读对账', REPAIR: '对账并修复' }[mode] || mode)
+export const modeLabel = (mode: string) => ({ AUTO: '数据同步', RECONCILE: '只读对账', REPAIR: '指定订单修复' }[mode] || mode)
 export const formatTime = (value: string | null | undefined) => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—'
 export const statusTone = (status: string | null | undefined): 'success' | 'danger' | 'warning' | 'info' | 'primary' => status === 'SUCCEEDED' ? 'success' : status === 'FAILED' ? 'danger' : status === 'RETRY_WAIT' ? 'warning' : status === 'RUNNING' ? 'primary' : 'info'

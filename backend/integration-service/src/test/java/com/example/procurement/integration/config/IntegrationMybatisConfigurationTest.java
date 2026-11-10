@@ -2,9 +2,8 @@ package com.example.procurement.integration.config;
 
 import com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration;
 import com.example.procurement.integration.dao.entity.JobRunDO;
-import com.example.procurement.integration.dao.mapper.CostCenterMapper;
+import com.example.procurement.integration.dao.mapper.SyncReconciliationMapper;
 import com.example.procurement.integration.dao.mapper.JobRunMapper;
-import com.example.procurement.integration.mock.dao.mapper.MockSapMapper;
 import java.sql.PreparedStatement;
 import java.sql.Types;
 import java.util.UUID;
@@ -21,7 +20,7 @@ import static org.mockito.Mockito.*;
 /** 加载真实MyBatis自动配置，不启动Web应用、不获取数据库连接。 */
 class IntegrationMybatisConfigurationTest {
     @Test
-    void autoConfigurationLoadsBusinessMappersAndBindsUuidWithoutLoadingMockMappers() {
+    void autoConfigurationLoadsSyncMappersAndBindsUuid() {
         DataSource source = mock(DataSource.class);
         new ApplicationContextRunner()
                 .withBean(DataSource.class, () -> source)
@@ -30,8 +29,7 @@ class IntegrationMybatisConfigurationTest {
                 .withPropertyValues("mybatis-plus.mapper-locations=classpath*:/mapper/integration/*.xml")
                 .run(context -> {
                     assertThat(context).hasSingleBean(SqlSessionFactory.class)
-                            .hasSingleBean(JobRunMapper.class).hasSingleBean(CostCenterMapper.class)
-                            .doesNotHaveBean(MockSapMapper.class);
+                            .hasSingleBean(JobRunMapper.class).hasSingleBean(SyncReconciliationMapper.class);
                     var configuration = context.getBean(SqlSessionFactory.class).getConfiguration();
                     JobRunDO run = new JobRunDO(); run.setRunId(UUID.randomUUID());
                     var statement = configuration.getMappedStatement(JobRunMapper.class.getName() + ".insert");

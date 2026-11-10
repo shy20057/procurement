@@ -5,8 +5,7 @@ import com.example.procurement.integration.dao.entity.JobRunDO;
 import com.example.procurement.integration.dao.mapper.JobLeaseMapper;
 import com.example.procurement.integration.dao.mapper.JobRunMapper;
 import com.example.procurement.integration.domain.context.JobContext;
-import com.example.procurement.integration.domain.enums.MasterDataType;
-import com.example.procurement.integration.domain.enums.TriggerType;
+import com.example.procurement.integration.domain.enums.SyncJobType;
 import com.example.procurement.integration.exception.IntegrationProblem;
 
 import java.util.UUID;
@@ -32,15 +31,15 @@ class SyncLeaseServiceTest {
         runs = mock(JobRunMapper.class); leases = mock(JobLeaseMapper.class);
         PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
         when(manager.getTransaction(any(TransactionDefinition.class))).thenReturn(mock(TransactionStatus.class));
-        service = new SyncLeaseServiceImpl(runs, leases, manager, new SyncSettings(500, 200, 5, 60));
-        context = new JobContext(UUID.randomUUID(), MasterDataType.COST_CENTER, "AUTO", TriggerType.MANUAL,
-                "SAP_COST_CENTER_WRITER", "node", 11L, 1);
+        service = new SyncLeaseServiceImpl(runs, leases, manager, new SyncSettings(60, 300, 50));
+        context = new JobContext(UUID.randomUUID(), SyncJobType.PURCHASE_ORDER, "AUTO",
+                "SAP_PURCHASE_ORDER_WRITER", "node", 11L, 1);
     }
 
     @Test
     void releaseUsesDatasetResourceKeyInsteadOfJobCode() {
         service.release(context);
-        verify(leases).release("SAP_COST_CENTER_WRITER", "node", 11L);
+        verify(leases).release("SAP_PURCHASE_ORDER_WRITER", "node", 11L);
     }
 
     @Test

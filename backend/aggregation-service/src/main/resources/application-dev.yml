@@ -36,16 +36,10 @@ integration:
     enabled: true
     admin-key: ${INTEGRATION_ADMIN_KEY:}
   sync:
-    page-size: 500
-    write-batch-size: 200
-    max-attempts: 5
     lease-seconds: 60
   mock-sap:
     enabled: true
     api-key: ${MOCK_SAP_API_KEY:local-sap-demo}
-  sap:
-    base-url: ${SAP_MASTER_DATA_URL:}
-    api-key: ${SAP_MASTER_DATA_KEY:}
 xxl:
   job:
     enabled: ${XXL_JOB_ENABLED:true}

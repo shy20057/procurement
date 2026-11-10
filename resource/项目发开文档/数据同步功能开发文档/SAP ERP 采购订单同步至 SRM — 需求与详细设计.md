@@ -148,7 +148,7 @@ ERP 和 SRM 通过来源键关联，属于应用关系。两端订单头和订�
 | `job_run`、`job_request_key` | `run_id` 串联运行、重试与审计；按 XXL 调度身份去重，复用幂等表保存请求到运行的映射 |
 | `sync_page_audit`、`sync_page_failure`、`sync_alert` | 成功页、失败信息及告警聚合 |
 | `sync_reconciliation_seen`、`sync_reconciliation_diff` | 已见订单、源目标版本与差异复核、修复结果 |
-| `management_audit` | 手动触发、补偿、修复、任务开关的操作者与理由 |
+| `management_audit` | 操作者、操作类型和理由。运行类操作用 `run_id` 关联 `job_run`，业务开关操作没有运行 ID |
 
 ## 4. ERP 接口与同步算法
 
@@ -179,6 +179,17 @@ ERP 和 SRM 通过来源键关联，属于应用关系。两端订单头和订�
 | `sapPurchaseOrderSyncJobHandler` | XXL-JOB Admin 每 5 分钟触发，也可在 Admin 手动执行 | 首次全量或增量。失败回传失败结果，由 Admin 配置有限次数重试 |
 | `sapPurchaseOrderReconcileJobHandler` | XXL-JOB Admin 低峰定时或手动执行 | 分页只读对账，记录差异 |
 | `sapPurchaseOrderRepairJobHandler` | 授权人员在 XXL-JOB Admin 手动触发，参数指定差异或订单 ID | 点查 ERP 最新状态并修复指定差异，保留审计 |
+
+XXL-JOB Admin 手动执行时，任务参数使用 JSON：
+
+| 操作 | 示例参数 |
+| --- | --- |
+| 手动同步或对账 | `{"operator":"buyer01","reason":"检查最新发布订单"}` |
+| 手动补偿 | `{"operator":"buyer01","reason":"ERP 网络恢复","retryRunId":"82b23868-ce34-4d70-a831-1e4958d0b41b"}` |
+| 按差异修复 | `{"operator":"buyer01","reason":"复核对账差异","differenceId":"27"}` |
+| 按源订单修复 | `{"operator":"buyer01","reason":"补拉订单最新发布版","sourceId":"123"}` |
+
+修复时 `differenceId` 和 `sourceId` 二选一。修复任务也可带 `retryRunId`，引用同任务同模式的失败或取消记录。定时任务参数留空，记录为 XXL-JOB 调度。自动重试由 Admin 管理。手动任务的 `operator` 由有执行权限的人员在 Admin 中填写，执行器收到的是填报值。SRM 开关操作优先记录请求登录身份，现有本地管理密钥模式记作 `LOCAL_ADMIN`。
 
 同一次 XXL 投递按任务和调度身份去重。XXL 新一次执行从同一任务的已提交检查点恢复，相同投递再次到达时复用原运行结果。同步、对账和修复按同一数据流租约串行。执行器按页续约并在提交前校验围栏令牌，失联后由后续 XXL 执行识别过期租约并恢复。运行页面查询进度、日志和差异，触发入口统一在 XXL-JOB Admin。
 

@@ -9,23 +9,28 @@ import com.example.procurement.integration.dao.mapper.SyncAuditMapper;
 import com.example.procurement.integration.dao.mapper.SyncCheckpointMapper;
 import com.example.procurement.integration.dao.mapper.SyncReconciliationMapper;
 import com.example.procurement.integration.domain.context.JobContext;
+import com.example.procurement.integration.domain.context.XxlTriggerMetadata.Parameters;
 import com.example.procurement.integration.exception.IntegrationProblem;
 import com.example.procurement.integration.purchase.PurchaseOrderSource.Anchor;
 import com.example.procurement.integration.purchase.PurchaseOrderSource.Cursor;
 import com.example.procurement.integration.purchase.PurchaseOrderSource.Page;
 import com.example.procurement.integration.service.SyncAlertService;
 import com.example.procurement.integration.service.SyncLeaseService;
-import com.example.procurement.integration.support.MasterDataCodec;
+import com.example.procurement.integration.support.SyncJsonCodec;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
-import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class PurchaseOrderSyncService {
+    private static final Logger log = LoggerFactory.getLogger(PurchaseOrderSyncService.class);
     private static final Comparator<Cursor> CURSOR_ORDER =
             Comparator.comparing(Cursor::updatedAt).thenComparingLong(Cursor::sourceId);
     private final PurchaseOrderSource source;
@@ -36,15 +41,14 @@ public class PurchaseOrderSyncService {
     private final SyncAuditMapper audits;
     private final SyncReconciliationMapper differences;
     private final SyncAlertService alerts;
-    private final MasterDataCodec codec;
+    private final SyncJsonCodec codec;
     private final int pageSize;
     private final int overlapSeconds;
 
     public PurchaseOrderSyncService(PurchaseOrderSource source, PurchaseOrderStore store, SyncLeaseService leases,
             SyncCheckpointMapper checkpoints, JobRunMapper runs, SyncAuditMapper audits,
-            SyncReconciliationMapper differences, SyncAlertService alerts, MasterDataCodec codec,
-            SyncSettings settings, @Value("${integration.purchase-order.page-size:50}") int pageSize) {
-        if (pageSize < 1 || pageSize > 200) throw new IllegalArgumentException("采购订单页大小必须为 1～200");
+            SyncReconciliationMapper differences, SyncAlertService alerts, SyncJsonCodec codec,
+            SyncSettings settings) {
         this.source = source;
         this.store = store;
         this.leases = leases;
@@ -54,15 +58,15 @@ public class PurchaseOrderSyncService {
         this.differences = differences;
         this.alerts = alerts;
         this.codec = codec;
-        this.pageSize = pageSize;
+        this.pageSize = settings.orderPageSize;
         this.overlapSeconds = settings.overlapSeconds;
     }
 
-    public void execute(JobContext context, Long repairSourceId) {
+    public void execute(JobContext context, Parameters parameters) {
         switch (context.mode()) {
             case "AUTO" -> synchronize(context);
             case "RECONCILE" -> reconcile(context);
-            case "REPAIR" -> repair(context, repairSourceId);
+            case "REPAIR" -> repair(context, parameters);
             default -> throw new IntegrationProblem("INVALID_MODE", "未知采购订单执行模式", false, 422);
         }
     }
@@ -85,7 +89,7 @@ public class PurchaseOrderSyncService {
                 throw new IntegrationProblem("SOURCE_CLOCK_REGRESSION", "ERP 时间早于已完成水位", true, 503);
             }
             if (now.equals(state.completedWatermark())) {
-                leases.fenced(context, () -> runs.noSafeWindow(context.runId()));
+                leases.fenced(context, () -> runs.noNewWindow(context.runId()));
                 return;
             }
             state = state.open(now);
@@ -94,7 +98,7 @@ public class PurchaseOrderSyncService {
         }
         Instant start = state.startAt(overlapSeconds);
         Instant end = state.windowEndAt();
-        leases.fenced(context, () -> runs.bindWindow(context.runId(), null, end, stored.getGeneration()));
+        leases.fenced(context, () -> runs.bindWindow(context.runId(), end, stored.getGeneration()));
         for (int pageNo = 1; ; pageNo++) {
             PurchaseOrderCheckpoint before = state;
             Page page = fetch(context, () -> source.changes(start, end, before.pageCursor(), pageSize));
@@ -111,7 +115,7 @@ public class PurchaseOrderSyncService {
 
     private void baseline(JobContext context) {
         Anchor anchor = fetch(context, source::anchor);
-        leases.fenced(context, () -> runs.startBaseline(context.runId(), 0));
+        leases.fenced(context, () -> runs.startPhase(context.runId(), "BASELINE"));
         long last = 0;
         for (int pageNo = 1; ; pageNo++) {
             long afterId = last;
@@ -130,8 +134,8 @@ public class PurchaseOrderSyncService {
 
     private void commitPage(JobContext context, int pageNo, String phase, String before, String after,
             List<PurchaseOrderSnapshot> items, Runnable saveCheckpoint) {
-        leases.fenced(context, () -> {
-            int applied = store.apply(items, false);
+        int applied = leases.fenced(context, () -> {
+            int written = store.apply(items, false);
             var audit = new SyncPageAuditDO();
             audit.setRunId(context.runId());
             audit.setPageNo(pageNo);
@@ -139,13 +143,15 @@ public class PurchaseOrderSyncService {
             audit.setFromCursor(before);
             audit.setToCursor(after);
             audit.setFetchedCount(items.size());
-            audit.setAppliedCount(applied);
-            audit.setIgnoredCount(items.size() - applied);
+            audit.setAppliedCount(written);
+            audit.setIgnoredCount(items.size() - written);
             audits.insertPage(audit);
-            runs.updateProgress(context.runId(), phase, items.size(), applied, items.size() - applied);
+            runs.updateProgress(context.runId(), phase, items.size(), written, items.size() - written);
             saveCheckpoint.run();
-            return null;
+            return written;
         });
+        log.debug("采购订单页已提交 runId={} phase={} page={} fetched={} applied={} from={} to={}",
+                context.runId(), phase, pageNo, items.size(), applied, before, after);
     }
 
     private Cursor validateChanges(Page page, Instant start, Instant end, Cursor previous) {
@@ -183,18 +189,26 @@ public class PurchaseOrderSyncService {
             recordLag(context, codec.read(checkpoint.getCommittedCursor(), PurchaseOrderCheckpoint.class));
         }
         long maxId = Math.max(fetch(context, source::anchor).maxSourceId(), store.maxSourceId());
-        leases.fenced(context, () -> runs.startReconciliation(context.runId(), 0));
+        leases.fenced(context, () -> runs.startPhase(context.runId(), "RECONCILE"));
         long last = 0;
         while (true) {
             long afterId = last;
             Page page = fetch(context, () -> source.baseline(afterId, maxId, pageSize));
             last = validateBaseline(page, afterId, maxId);
+            List<SyncDifferenceDO> verified = new ArrayList<>();
+            for (PurchaseOrderSnapshot expected : page.items()) {
+                var target = store.find(expected.sourceId()).orElse(null);
+                if (compare(context, expected, target) != null) {
+                    var difference = recheck(context, expected.sourceId());
+                    if (difference != null) verified.add(difference);
+                }
+            }
             leases.fenced(context, () -> {
                 for (PurchaseOrderSnapshot expected : page.items()) {
                     differences.insertSeen(context.runId(), expected.sourceId(), expected.orderNo(),
                             expected.updatedAt(), store.hash(expected));
-                    observeDifference(context, expected, store.find(expected.sourceId()).orElse(null));
                 }
+                verified.forEach(differences::insertDifference);
                 runs.updateProgress(context.runId(), "RECONCILE", page.items().size(), 0, 0);
                 return null;
             });
@@ -203,15 +217,17 @@ public class PurchaseOrderSyncService {
 
         long missingAfter = 0;
         while (true) {
-            List<Long> missing = differences.missingIds(context.runId(), "PURCHASE_ORDER", maxId, missingAfter, pageSize);
+            List<Long> missing = differences.missingIds(context.runId(), maxId, missingAfter, pageSize);
             if (missing.isEmpty()) break;
+            List<SyncDifferenceDO> verified = new ArrayList<>();
             for (long id : missing) {
-                PurchaseOrderSnapshot latest = fetch(context, () -> source.find(id)).orElse(null);
-                leases.fenced(context, () -> {
-                    observeDifference(context, latest, store.find(id).orElse(null));
-                    return null;
-                });
+                var difference = recheck(context, id);
+                if (difference != null) verified.add(difference);
             }
+            leases.fenced(context, () -> {
+                verified.forEach(differences::insertDifference);
+                return null;
+            });
             missingAfter = missing.get(missing.size() - 1);
         }
         leases.fenced(context, () -> {
@@ -224,20 +240,28 @@ public class PurchaseOrderSyncService {
 
     private void recordLag(JobContext context, PurchaseOrderCheckpoint checkpoint) {
         leases.fenced(context, () -> {
-            if (checkpoint.completedWatermark().isBefore(differences.databaseNow().minusSeconds(600))) {
+            long lagSeconds = Duration.between(checkpoint.completedWatermark(), differences.databaseNow()).getSeconds();
+            log.debug("采购订单同步延迟 runId={} lagSeconds={}", context.runId(), lagSeconds);
+            if (lagSeconds > 600) {
                 alerts.alert(context.type().jobCode, context.runId(), "STALE", "采购订单完成水位已落后超过 10 分钟");
             }
             return null;
         });
     }
 
-    private void observeDifference(JobContext context, PurchaseOrderSnapshot expected,
+    private SyncDifferenceDO recheck(JobContext context, long sourceId) {
+        PurchaseOrderSnapshot latest = fetch(context, () -> source.find(sourceId)).orElse(null);
+        if (latest != null && latest.sourceId() != sourceId) throw invalidPage();
+        return compare(context, latest, store.find(sourceId).orElse(null));
+    }
+
+    private SyncDifferenceDO compare(JobContext context, PurchaseOrderSnapshot expected,
             PurchaseOrderStore.TargetOrder target) {
         PurchaseOrderSnapshot actual = target == null ? null : target.snapshot();
-        if (expected == null && actual == null) return;
+        if (expected == null && actual == null) return null;
         String sourceHash = expected == null ? null : store.hash(expected);
         String targetHash = actual == null ? null : store.hash(actual);
-        if (expected != null && actual != null && matches(expected, target, sourceHash, targetHash)) return;
+        if (expected != null && actual != null && matches(expected, target, sourceHash, targetHash)) return null;
         var difference = new SyncDifferenceDO();
         PurchaseOrderSnapshot identity = expected == null ? actual : expected;
         difference.setRunId(context.runId());
@@ -256,7 +280,10 @@ public class PurchaseOrderSyncService {
             if (!target.totalMatches()) difference.setDetail("SRM 订单头总额与有效行汇总不一致");
             else if (!target.storedHashMatches()) difference.setDetail("SRM 保存的摘要与实际订单内容不一致");
         }
-        differences.insertDifference(difference);
+        difference.setRepaired(false);
+        difference.setRepairStatus("NOT_REQUESTED");
+        difference.setVerificationStatus(expected == null ? "OBSERVED" : "CONFIRMED");
+        return difference;
     }
 
     private boolean matches(PurchaseOrderSnapshot source, PurchaseOrderStore.TargetOrder target,
@@ -265,8 +292,17 @@ public class PurchaseOrderSyncService {
                 && source.updatedAt().equals(target.snapshot().updatedAt()) && Objects.equals(sourceHash, targetHash);
     }
 
-    private void repair(JobContext context, Long id) {
-        if (id == null || id <= 0) throw new IntegrationProblem("INVALID_REPAIR_ID", "请提供 ERP 源订单 ID", false, 422);
+    private void repair(JobContext context, Parameters parameters) {
+        long id;
+        if (parameters.sourceId() != null) {
+            id = parameters.sourceId();
+        } else {
+            Long resolved = differences.findOrderSourceId(context.type().jobCode, parameters.differenceId());
+            if (resolved == null) {
+                throw new IntegrationProblem("DIFFERENCE_NOT_FOUND", "未找到可关联 ERP 订单的对账差异", false, 404);
+            }
+            id = resolved;
+        }
         var latest = fetch(context, () -> source.find(id)).orElseThrow(() ->
                 new IntegrationProblem("SOURCE_ORDER_MISSING", "ERP 无此订单，未执行自动取消或删除", false, 404));
         if (latest.sourceId() != id) throw invalidPage();
@@ -275,19 +311,17 @@ public class PurchaseOrderSyncService {
             if (actual != null && actual.snapshot().updatedAt().isAfter(latest.updatedAt())) {
                 throw new IntegrationProblem("SOURCE_VERSION_OLDER", "ERP 当前版本早于 SRM，无法修复", false, 409);
             }
-            observeDifference(context, latest, actual);
+            var difference = compare(context, latest, actual);
             String sourceHash = store.hash(latest);
-            boolean alreadyConsistent = actual != null && matches(latest, actual, sourceHash, store.hash(actual.snapshot()));
-            int applied = alreadyConsistent ? 0 : store.apply(List.of(latest), true);
+            int applied = difference == null ? 0 : store.apply(List.of(latest), true);
             var verified = store.find(id).orElseThrow();
             if (!matches(latest, verified, sourceHash, store.hash(verified.snapshot()))) {
                 throw new IntegrationProblem("PO_REPAIR_UNVERIFIED", "采购订单修复后复核未通过", false, 409);
             }
-            for (var difference : differences.selectDifferences(context.runId())) {
-                difference.setVerificationStatus("CONFIRMED");
+            if (difference != null) {
                 difference.setRepairStatus("REPAIRED");
                 difference.setRepaired(true);
-                differences.updateDifference(difference);
+                differences.insertDifference(difference);
             }
             differences.resolveOrderDifferences(context.type().jobCode, id, context.runId(), applied > 0);
             runs.updateProgress(context.runId(), "REPAIR", 1, applied, 1 - applied);

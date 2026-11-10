@@ -3,69 +3,39 @@ package com.example.procurement.integration.service.impl;
 import com.example.procurement.integration.dao.entity.JobRunDO;
 import com.example.procurement.integration.domain.context.JobContext;
 import com.example.procurement.integration.domain.context.XxlTriggerMetadata;
-import com.example.procurement.integration.domain.enums.RetryOwner;
-import com.example.procurement.integration.domain.enums.MasterDataType;
 import com.example.procurement.integration.domain.result.JobExecutionResult;
 import com.example.procurement.integration.domain.result.XxlSubmission;
 import com.example.procurement.integration.exception.IntegrationProblem;
 import com.example.procurement.integration.purchase.PurchaseOrderSyncService;
 import com.example.procurement.integration.service.JobExecutionCoordinator;
-import com.example.procurement.integration.service.MasterDataSyncService;
 import com.example.procurement.integration.service.SyncJobService;
 import com.example.procurement.integration.service.SyncLeaseService;
 
-import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
-/*
-* 这是执行的核心编排层,协调"领取 → 执行 → 落结果"的完整生命周期:
-* */
 @Service
 public class JobExecutionCoordinatorImpl implements JobExecutionCoordinator {
     private static final Logger log = LoggerFactory.getLogger(JobExecutionCoordinatorImpl.class);
     private final SyncJobService jobs;
     private final SyncLeaseService leases;
-    private final MasterDataSyncService sync;
     private final PurchaseOrderSyncService purchaseOrders;
-    private final String node;
-    private final ConcurrentMap<UUID, JobContext> active = new ConcurrentHashMap<>();
+    private final String node = "integration:" + UUID.randomUUID();
 
-    @Autowired
-    public JobExecutionCoordinatorImpl(SyncJobService jobs, MasterDataSyncService sync, SyncLeaseService leases,
+    public JobExecutionCoordinatorImpl(SyncJobService jobs, SyncLeaseService leases,
             PurchaseOrderSyncService purchaseOrders) {
-        this(jobs, sync, leases, "integration:" + UUID.randomUUID(), purchaseOrders);
-    }
-
-    JobExecutionCoordinatorImpl(SyncJobService jobs, MasterDataSyncService sync, SyncLeaseService leases, String node) {
-        this(jobs, sync, leases, node, null);
-    }
-
-    private JobExecutionCoordinatorImpl(SyncJobService jobs, MasterDataSyncService sync, SyncLeaseService leases,
-            String node, PurchaseOrderSyncService purchaseOrders) {
         this.jobs = jobs;
         this.leases = leases;
-        this.sync = sync;
         this.purchaseOrders = purchaseOrders;
-        this.node = node;
     }
 
-    /*
-    * executeFromXxl():先 submitXxl() 落库,然后根据返回状态处理——如果是重复/忙/停用,直接返回对应结果;否则 claim() 领取执行权,再走 executeClaimed()。
-    * */
-    public JobExecutionResult executeFromXxl(String jobCode, XxlTriggerMetadata metadata, String requestId) {
-        return executeFromXxl(jobCode,"AUTO",metadata,requestId);
-    }
     @Override
     public JobExecutionResult executeFromXxl(String jobCode, String mode, XxlTriggerMetadata metadata, String requestId) {
-        XxlSubmission submission = "AUTO".equals(mode)?jobs.submitXxl(jobCode, metadata, requestId):jobs.submitXxl(jobCode,mode,metadata,requestId);
+        XxlSubmission submission = jobs.submitXxl(jobCode, mode, metadata, requestId);
         if (submission.state() == XxlSubmission.State.DUPLICATE_TERMINAL) {
             if ("SUCCEEDED".equals(submission.terminalStatus())) {
                 return JobExecutionResult.succeeded(submission.runId(), "幂等复用已成功的业务运行");
@@ -88,28 +58,12 @@ public class JobExecutionCoordinatorImpl implements JobExecutionCoordinator {
             jobs.failPending(submission.runId(), "JOB_BUSY", "数据集资源租约正被其他运行占用");
             return JobExecutionResult.failed(submission.runId(), "JOB_BUSY", "数据集资源租约正被其他运行占用", true);
         }
-        return executeClaimed(context, RetryOwner.XXL, metadata == null ? null : metadata.repairSourceId());
+        return executeClaimed(context, metadata.parameters());
     }
 
-    /*
-    * executeClaimed():把任务放进内存的 active 映射(用于心跳续租),调用 sync.execute() 执行真正的同步业务,然后 jobs.success() 或 jobs.failure() 落库。finally 里移除 active 并 leases.release() 释放租约。
-    * */
-    public JobExecutionResult executeClaimed(JobContext context, RetryOwner retryOwner) {
-        return executeClaimed(context, retryOwner, null);
-    }
-
-    private JobExecutionResult executeClaimed(JobContext context, RetryOwner retryOwner, Long repairSourceId) {
-        boolean order = context.type() == MasterDataType.PURCHASE_ORDER;
-        if (!order) active.put(context.runId(), context);
+    private JobExecutionResult executeClaimed(JobContext context, XxlTriggerMetadata.Parameters parameters) {
         try {
-            if (order) {
-                if (retryOwner != RetryOwner.XXL) {
-                    throw new IntegrationProblem("XXL_ONLY", "采购订单只接受 XXL-JOB 执行", false, 409);
-                }
-                purchaseOrders.execute(context, repairSourceId);
-            } else {
-                sync.execute(context);
-            }
+            purchaseOrders.execute(context, parameters);
             jobs.success(context); // 落成功状态
             return JobExecutionResult.succeeded(context.runId(), "业务运行完成");
         } catch (CancellationException cancelled) {
@@ -120,7 +74,7 @@ public class JobExecutionCoordinatorImpl implements JobExecutionCoordinator {
             log.error("同步任务失败 runId={} code={}", context.runId(), problem.code, failure);
             if (!"LEASE_LOST".equals(problem.code)) {
                 try {
-                    jobs.failure(context, problem, retryOwner);
+                    jobs.failure(context, problem);
                 } catch (CancellationException cancelled) {
                     jobs.cancelled(context);
                 } catch (Exception persistenceFailure) {
@@ -129,7 +83,6 @@ public class JobExecutionCoordinatorImpl implements JobExecutionCoordinator {
             }
             return JobExecutionResult.failed(context.runId(), problem.code, problem.getMessage(), problem.retryable);
         } finally {
-            active.remove(context.runId());
             try {
                 leases.release(context);
             } catch (Exception releaseFailure) {
@@ -138,13 +91,6 @@ public class JobExecutionCoordinatorImpl implements JobExecutionCoordinator {
         }
     }
 
-    public List<JobContext> activeContexts() {
-        return List.copyOf(active.values());
-    }
-
-    /*
-    * classify():把异常分类——业务异常(IntegrationProblem)、数据库异常(可重试)、未知异常(不可重试),决定错误码和是否可重试。
-    * */
     private IntegrationProblem classify(Exception failure) {
         if (failure instanceof IntegrationProblem known) return known;
         if (failure instanceof DataAccessException) {

@@ -27,7 +27,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.FullyQualifiedAnnotationBeanNameGenerator;
-import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @ComponentScan(
@@ -45,7 +44,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
                 }))
 @MapperScan({"com.example.procurement.supplier.dao.mapper", "com.example.procurement.sourcing.dao.mapper"})
 @EnableCaching
-@EnableScheduling
 public class AggregationServiceApplication {
     private static final String BUSINESS_HISTORY = "aggregate_business_history.flyway_schema_history";
     private static final long BUSINESS_MIGRATION_LOCK = 71506400821L;

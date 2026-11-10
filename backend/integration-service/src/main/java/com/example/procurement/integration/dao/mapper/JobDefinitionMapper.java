@@ -10,7 +10,9 @@ import org.apache.ibatis.annotations.Param;
 /** 只声明数据库操作；业务决策和事务由 Service 负责。 */
 public interface JobDefinitionMapper {
     JobDefinitionDO lockDefinition(@Param("jobCode") String jobCode);
-    List<JobDefinitionRespDTO> selectDefinitions();
+    List<JobDefinitionRespDTO> selectDefinitions(@Param("jobCode") String jobCode);
     int setEnabled(@Param("jobCode") String jobCode, @Param("enabled") boolean enabled);
-    int insertManagementAudit(@Param("id") UUID id, @Param("jobCode") String jobCode, @Param("reason") String reason);
+    int insertManagementAudit(@Param("id") UUID id, @Param("jobCode") String jobCode,
+            @Param("runId") UUID runId, @Param("operation") String operation,
+            @Param("actor") String actor, @Param("reason") String reason);
 }

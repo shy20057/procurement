@@ -56,17 +56,15 @@ Java 17 是强制运行基线；不要使用更高版本独有语法。
 
 学习代码先看[集成模块分层与代码阅读指南](resource/项目发开文档/简历五大功能技术实现方案/00-集成模块分层与代码阅读指南.md)。集成模块已统一为Controller → Service/Impl → MyBatis Mapper/XML，数据模型按DO、ReqDTO、RespDTO与Domain上下文区分。
 
-新增入口：顶部“外围系统集成” → “数据同步中心”，路径`/integration/sync`。支持SAP模拟源维护、首次全量与增量拉取、成本中心/汇率本地列表、成功页检查点、运行详情、重试取消、对账修复和告警待办。
+顶部“外围系统集成” → “数据同步中心”（`/integration/sync`）展示 SAP ERP 发布到 SRM 的订单、同步检查点、失败页、对账差异和告警。
 
-当前实现通过HTTP模拟SAP，使用数据库页事务与批量Upsert；不包含真实SAP JCo联通或CDC/Canal。聚合与独立集成启动均支持，首次启动会创建独立的`integration_schema`和开发用`mock_sap_schema`。详见[实现与演示指南](resource/项目发开文档/简历五大功能技术实现方案/01-主数据同步实现与演示指南.md)。
-
-前端单独连接集成服务时，可通过`VITE_DEV_API_PROXY`指定后端地址；默认仍为原网关8080。测试和联调按项目约定先经用户批准。
+本地联调使用模拟 ERP 发布接口与独立源库。SRM 分页拉取正式订单头和明细，使用组合游标、页事务与批量 Upsert 写入已有采购订单表。启动聚合服务时，Flyway 会初始化所需业务和集成表。详见[采购订单同步详设](resource/项目发开文档/数据同步功能开发文档/SAP%20ERP%20采购订单同步至%20SRM%20—%20需求与详细设计.md)。
 
 ### XXL-JOB分布式调度
 
-成本中心和汇率的自动业务Cron由XXL-JOB 2.4.2统一管理。Admin默认地址为`http://localhost:9090/xxl-job-admin`，执行器端口为`9999`。XXL-JOB负责Cron、路由、超时和失败重试；PostgreSQL中的SRM任务表继续负责幂等、资源租约、fencing token、分页检查点和业务运行详情。
+XXL-JOB Admin 默认在 `http://localhost:9090/xxl-job-admin`，执行器端口为 `9999`。Admin 负责 Cron、路由、超时和失败重试，SRM 负责页事务、检查点、幂等、租约及审计。
 
-开发聚合模式只需手动启动`aggregation-service`和`api-gateway`。执行器已经内嵌在聚合服务中，不能同时启动独立`integration-service`，否则会重复注册并冲突占用9999端口。首次创建XXL MySQL数据卷时会初始化两个停用任务；聚合服务注册成功后，在Admin确认配置再启用。详见[XXL-JOB实现与演示指南](resource/项目发开文档/简历五大功能技术实现方案/02-XXL-JOB实现与演示指南.md)。
+开发聚合模式启动 `aggregation-service` 和 `api-gateway`。聚合应用已注册执行器，同一端口只启动一个执行器进程。首次创建 XXL MySQL 数据卷时，初始化脚本会预置三个停用任务。同步建议每 5 分钟运行，对账默认每天 02:30，指定修复手动执行。已有 Admin 数据卷可执行幂等的 `deploy/xxl-job/init/02-procurement_jobs.sql` 补齐采购订单任务，并在 Admin 停用旧的成本中心、汇率任务。联调通过后分别启用 SRM 业务开关与 Admin 调度。
 
 ### 原有项目文档
 

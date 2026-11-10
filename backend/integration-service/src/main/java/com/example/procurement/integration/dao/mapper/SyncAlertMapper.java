@@ -12,9 +12,9 @@ int upsert(@Param("jobCode") String jobCode, @Param("runId") UUID runId,
             @Param("category") String category, @Param("summary") String summary, @Param("dedupKey") String dedupKey);
     int resolveSync(@Param("jobCode") String jobCode);
     int resolveReconciliation(@Param("jobCode") String jobCode);
-    List<String> selectStaleJobCodes();
-    long countOpen();
-    long countAll();
-    List<SyncAlertDO> selectPage(@Param("size") int size, @Param("offset") long offset);
+    long countOpen(@Param("jobCode") String jobCode);
+    long countByJob(@Param("jobCode") String jobCode);
+    List<SyncAlertDO> selectPageByJob(@Param("jobCode") String jobCode, @Param("size") int size,
+            @Param("offset") long offset);
     int acknowledge(@Param("id") long id);
 }

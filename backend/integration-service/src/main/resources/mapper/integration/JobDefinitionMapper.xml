@@ -10,11 +10,11 @@
     from integration_schema.job_definition d
     join integration_schema.sync_checkpoint c using(job_code)
     left join lateral (select run_id,status from integration_schema.job_run
-      where job_code=d.job_code order by created_at desc limit 1) r on true order by d.job_code
+      where job_code=d.job_code order by created_at desc limit 1) r on true where d.job_code=#{jobCode}
   </select>
   <update id="setEnabled">update integration_schema.job_definition set enabled=#{enabled} where job_code=#{jobCode}</update>
   <insert id="insertManagementAudit">
-    insert into integration_schema.management_audit(id,job_code,operation,reason)
-    values (#{id},#{jobCode},'RESET_INCOMPLETE_BASELINE',#{reason})
+    insert into integration_schema.management_audit(id,job_code,run_id,operation,actor,reason)
+    values (#{id},#{jobCode},#{runId},#{operation},#{actor},#{reason})
   </insert>
 </mapper>

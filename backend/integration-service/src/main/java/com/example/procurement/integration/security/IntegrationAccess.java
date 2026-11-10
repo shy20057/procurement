@@ -19,6 +19,11 @@ public class IntegrationAccess {
                              @Value("${integration.management.admin-key:}") String adminKey) {
         this.enabled = enabled; this.adminKey = adminKey;
     }
+    public String operator(HttpServletRequest request) {
+        var principal = request.getUserPrincipal();
+        return principal == null ? "LOCAL_ADMIN" : principal.getName();
+    }
+
     public boolean enabled() { return enabled; }
     public void requireMutation(HttpServletRequest request) {
         if (!enabled) throw new IntegrationProblem("MANAGEMENT_DISABLED", "当前环境未启用集成管理写操作", false, 403);
